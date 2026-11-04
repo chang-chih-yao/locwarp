@@ -1,13 +1,14 @@
 // Run from the repo root:
 //   node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"
 // (the warning is because frontend/package.json can't declare "type": "module":
-// electron/main.js is CommonJS).
+// electron/main.js is CommonJS). The backend checks need the repo-root .venv.
 //
 // Locks the initial values (GLOSSARY.md: 初始值) and keeps the 模式速度
 // table identical across the three runtimes that each hold a copy.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   INITIAL_MOVE_MODE,
@@ -56,14 +57,28 @@ test('壞掉或不是物件的點位種類設定整份用初始值', () => {
   }
 });
 
+// Imports backend/config.py with the repo's .venv Python, so the checks below
+// see the values the backend actually runs with, not just the source text.
+function backendSpeeds(): { kmh: Record<string, number>; mps: Record<string, number> } {
+  const py = ['.venv/Scripts/python.exe', '.venv/bin/python'].map((p) => join(repo, p)).find((p) => existsSync(p));
+  assert.ok(py, '找不到 repo 根目錄的 .venv Python，無法驗證 backend 的值');
+  const code = 'import json, config; print(json.dumps({"kmh": config.MODE_SPEED_KMH, '
+    + '"mps": {k: p["speed_mps"] for k, p in config.SPEED_PROFILES.items()}}))';
+  const r = spawnSync(py, ['-c', code], { cwd: join(repo, 'backend'), encoding: 'utf8' });
+  assert.equal(r.status, 0, `import backend config 失敗：${r.stderr}`);
+  return JSON.parse(r.stdout.trim().split('\n').pop()!);
+}
+
 test('backend 的模式速度與前端一致', () => {
-  const src = read('backend/config.py');
-  const block = src.match(/^MODE_SPEED_KMH[^=]*=\s*\{([^}]*)\}/m);
-  assert.ok(block, 'backend/config.py 找不到 MODE_SPEED_KMH');
-  const backend = Object.fromEntries(
-    [...block[1].matchAll(/"(\w+)":\s*([\d.]+)/g)].map(([, k, v]) => [k, Number(v)]),
-  );
-  assert.deepEqual(backend, { ...MODE_SPEED_KMH });
+  assert.deepEqual(backendSpeeds().kmh, { ...MODE_SPEED_KMH });
+});
+
+test('backend 實際使用的 speed_mps 是模式速度 ÷ 3.6', () => {
+  const { kmh, mps } = backendSpeeds();
+  assert.deepEqual(Object.keys(mps).sort(), Object.keys(kmh).sort());
+  for (const [mode, v] of Object.entries(kmh)) {
+    assert.ok(Math.abs(mps[mode] - v / 3.6) < 1e-9, `${mode}: speed_mps ${mps[mode]} ≠ ${v} / 3.6`);
+  }
 });
 
 test('手機控制頁的模式按鈕與初始模式與前端一致', () => {

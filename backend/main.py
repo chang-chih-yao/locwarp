@@ -1,15 +1,24 @@
 import asyncio
 import json
 import logging
+import sys
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+# `python main.py` runs this file as `__main__`, then uvicorn.run("main:app")
+# and every `from main import app_state` in api/* would import it a second
+# time as `main` — building a second, unused AppState (bookmarks / routes
+# loaded twice). Register this module under its import name first so both
+# names resolve to the same module object.
+if __name__ == "__main__":
+    sys.modules.setdefault("main", sys.modules[__name__])
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import API_HOST, API_PORT, SETTINGS_FILE, DEFAULT_LOCATION
+from config import API_HOST, API_PORT, APP_VERSION, SETTINGS_FILE, DEFAULT_LOCATION
 from core.device_manager import DeviceManager
 from services.cooldown import CooldownTimer
 from services.bookmarks import BookmarkManager
@@ -672,11 +681,41 @@ async def _wifi_tunnel_keepalive():
             logger.debug("WiFi keepalive loop iteration error", exc_info=True)
 
 
+def _install_windows_connreset_filter() -> None:
+    """Silence the harmless WinError 10054 traceback on Windows.
+
+    ProactorEventLoop logs "Exception in callback
+    _ProactorBasePipeTransport._call_connection_lost()" with
+    ConnectionResetError whenever a client drops a TCP connection
+    abruptly (React StrictMode closing the first /ws/status socket in dev,
+    a page reload, Electron quitting). The peer is already gone and there
+    is nothing to handle. Only that exact case is dropped; everything else
+    goes to the previous handler."""
+    if sys.platform != "win32":
+        return
+    loop = asyncio.get_running_loop()
+    previous = loop.get_exception_handler()
+
+    def _handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        if (
+            isinstance(context.get("exception"), ConnectionResetError)
+            and "_call_connection_lost" in context.get("message", "")
+        ):
+            return
+        if previous is not None:
+            previous(loop, context)
+        else:
+            loop.default_exception_handler(context)
+
+    loop.set_exception_handler(_handler)
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     import asyncio
     # ── Startup ──
-    logger.info("LocWarp starting — scanning for devices…")
+    _install_windows_connreset_filter()
+    logger.info("LocWarp %s starting — scanning for devices…", APP_VERSION)
     try:
         devices = await app_state.device_manager.discover_devices()
         if devices:
@@ -712,7 +751,7 @@ async def lifespan(application: FastAPI):
 
 # ── FastAPI app ───────────────────────────────────────────
 
-app = FastAPI(title="LocWarp", version="0.1.0", description="iOS Virtual Location Simulator", lifespan=lifespan)
+app = FastAPI(title="LocWarp", version=APP_VERSION, description="iOS Virtual Location Simulator", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -750,7 +789,7 @@ app.include_router(pipi_router)
 async def root():
     return {
         "name": "LocWarp",
-        "version": "0.1.0",
+        "version": APP_VERSION,
         "status": "running",
         "initial_position": app_state.get_initial_position(),
     }

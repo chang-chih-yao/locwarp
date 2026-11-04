@@ -1,5 +1,27 @@
+import json
+import sys
 from pathlib import Path
 from typing import TypedDict
+
+
+def _read_app_version() -> str:
+    """App version from frontend/package.json, the single source of truth
+    (StatusBar / UpdateChecker read it too). The PyInstaller build bundles
+    that file at sys._MEIPASS/package.json (see locwarp-backend.spec)."""
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "package.json")
+    candidates.append(Path(__file__).resolve().parent.parent / "frontend" / "package.json")
+    for path in candidates:
+        try:
+            return str(json.loads(path.read_text(encoding="utf-8"))["version"])
+        except (OSError, ValueError, KeyError):
+            continue
+    return "unknown"
+
+
+APP_VERSION = _read_app_version()
 
 # Paths
 DATA_DIR = Path.home() / ".locwarp"
@@ -40,7 +62,10 @@ BROUTER_BASE_URL = "https://brouter.de"
 
 # Nominatim
 NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org"
-NOMINATIM_USER_AGENT = "LocWarp./0.2.200 (+https://github.com/keezxc1223/locwarp)"
+# Keep the "LocWarp." product token, the "." is not a typo: Nominatim
+# answers "LocWarp/<ver>" with 403 Access denied (that was the v0.2.202
+# fix), while "LocWarp./<ver>" gets 200.
+NOMINATIM_USER_AGENT = f"LocWarp./{APP_VERSION} (+https://github.com/keezxc1223/locwarp)"
 
 # Photon (komoot) — OSM-backed, no API key, more forgiving than Nominatim
 # for fuzzy / typo queries and unrestricted on User-Agent.

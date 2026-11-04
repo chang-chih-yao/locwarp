@@ -447,7 +447,29 @@ class DeviceManager:
         tool, and we return anyway — the caller (`_create_dvt_location_service`)
         will then attempt DVT directly and produce a clean error if
         dtservicehub isn't advertised.
+
+        The authoritative signal is whether the RSD handshake advertises
+        DVT's service (com.apple.instruments.dtservicehub): DvtProvider
+        connects to exactly that. mobile_image_mounter is only asked when
+        the service list is unavailable or lacks it — on iOS 26.6.2 and
+        27.2 it answers LookupImage with an empty ImageSignature and
+        CopyDevices with an empty EntryList even while DVT works, which
+        made this warn spuriously after every reconnect.
         """
+        peer_info = getattr(conn.lockdown, "peer_info", None)
+        services = peer_info.get("Services") if isinstance(peer_info, dict) else None
+        if isinstance(services, dict) and DvtProvider.RSD_SERVICE_NAME in services:
+            logger.info(
+                "DVT service %s advertised on %s; developer services available",
+                DvtProvider.RSD_SERVICE_NAME, conn.udid,
+            )
+            try:
+                from api.websocket import broadcast
+                await broadcast("ddi_mounted", {"udid": conn.udid})
+            except Exception:
+                pass
+            return
+
         try:
             from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService
         except ImportError as exc:

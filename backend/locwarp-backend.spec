@@ -88,7 +88,9 @@ a = Analysis(
               *ps_binaries],
     datas=[*pmd_datas, *pytun_datas, *pytcp_datas, *ddi_datas, *pyimg4_datas, *pyimg4_meta,
            *ps_datas,
-           ('static/phone.html', 'static')],
+           ('static/phone.html', 'static'),
+           # config.APP_VERSION reads this (single source of truth for the version).
+           ('../frontend/package.json', '.')],
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},

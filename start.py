@@ -3,11 +3,13 @@ LocWarp 一鍵啟動器
 雙擊此檔案即可啟動 LocWarp
 """
 
+import json
 import subprocess
 import sys
 import os
 import time
 import shutil
+import unicodedata
 import webbrowser
 import urllib.request
 import socket
@@ -23,11 +25,28 @@ FRONTEND_PORT = 5173
 procs = []
 
 
+def read_app_version():
+    """Version from frontend/package.json (single source of truth)."""
+    try:
+        with open(os.path.join(FRONTEND, "package.json"), encoding="utf-8") as f:
+            return str(json.load(f)["version"])
+    except (OSError, ValueError, KeyError):
+        return "?"
+
+
+def display_width(text):
+    # CJK and ambiguous-width chars (e.g. "—") take two columns in a
+    # CJK-locale console; the box borders below assume the same.
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F", "A") else 1 for ch in text)
+
+
 def print_banner():
+    inner = 42  # columns between the ║ borders
+    title = f"   LocWarp — iOS 虛擬定位模擬器 v{read_app_version()}"
     print()
-    print("  ╔══════════════════════════════════════════╗")
-    print("  ║   LocWarp — iOS 虛擬定位模擬器 v0.1     ║")
-    print("  ╚══════════════════════════════════════════╝")
+    print("  ╔" + "═" * inner + "╗")
+    print("  ║" + title + " " * max(inner - display_width(title), 1) + "║")
+    print("  ╚" + "═" * inner + "╝")
     print()
 
 

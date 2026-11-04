@@ -79,15 +79,20 @@ class SpeedProfile(TypedDict):
     update_interval: float  # tick period (seconds)
 
 
-# Speed profiles (m/s). Defaults align with the frontend ControlPanel
-# preset chips (10.8 / 19.8 / 60 km/h). v0.2.84 lifted these from the
-# v0.1.0 numbers (1.4 / 2.8 / 11.1) which dated from when "running" still
-# meant actual running; the i18n label was later renamed to 腳踏車 and
-# the chip value bumped to bike speed without touching the backend.
+# 模式速度 (km/h). Mirrors frontend/src/defaults.ts MODE_SPEED_KMH, which
+# the frontend chips and the phone page show; tests/frontend/test_defaults.ts
+# fails when the two drift apart (they once did: the chip moved to bike
+# speed while this table still held running speed). "running" is 腳踏車.
+MODE_SPEED_KMH: dict[str, float] = {
+    "walking": 10.8,
+    "running": 19.5,
+    "driving": 60.0,
+}
+
 SPEED_PROFILES: dict[str, SpeedProfile] = {
-    "walking": {"speed_mps": 3.0, "jitter": 0.5, "update_interval": 1.0},
-    "running": {"speed_mps": 5.5, "jitter": 0.7, "update_interval": 0.5},
-    "driving": {"speed_mps": 16.7, "jitter": 1.2, "update_interval": 0.5},
+    "walking": {"speed_mps": MODE_SPEED_KMH["walking"] / 3.6, "jitter": 0.5, "update_interval": 1.0},
+    "running": {"speed_mps": MODE_SPEED_KMH["running"] / 3.6, "jitter": 0.7, "update_interval": 0.5},
+    "driving": {"speed_mps": MODE_SPEED_KMH["driving"] / 3.6, "jitter": 1.2, "update_interval": 0.5},
 }
 
 

@@ -310,9 +310,10 @@
 <div id="sheet" role="dialog" aria-modal="true">
   <h2 id="sheet-title">確認動作?</h2>
   <div class="coord" id="sheet-coord"></div>
+  <!-- Mode speeds and the initially active mode mirror frontend/src/defaults.ts (checked by tests/frontend/test_defaults.ts). -->
   <div class="mode-row" id="sheet-modes" style="display:none">
-    <button data-mode="walking" data-kmh="10.8" class="active">走路(10.8km/h)</button>
-    <button data-mode="running" data-kmh="19.8">腳踏車(19.8km/h)</button>
+    <button data-mode="walking" data-kmh="10.8">走路(10.8km/h)</button>
+    <button data-mode="running" data-kmh="19.5" class="active">腳踏車(19.5km/h)</button>
     <button data-mode="driving" data-kmh="60">開車(60km/h)</button>
   </div>
   <div class="custom-speed" id="sheet-custom" style="display:none">
@@ -711,7 +712,7 @@
   const sheetCustom = document.getElementById('sheet-custom');
   const sheetCustomInput = document.getElementById('sheet-custom-input');
   let pendingAction = null;
-  let navigateMode = 'walking';
+  let navigateMode = 'running';  // must match the button marked active in #sheet-modes
 
   sheetModes.querySelectorAll('button').forEach((b) => {
     b.addEventListener('click', () => {

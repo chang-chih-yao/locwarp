@@ -31,6 +31,7 @@ const ApplySpeedButton: React.FC<{ onApply: () => Promise<void> | void; t: (k: a
 };
 import PauseControl from './PauseControl';
 import { SimMode, MoveMode } from '../hooks/useSimulation';
+import { MODE_SPEED_KMH } from '../defaults';
 import AddressSearch from './AddressSearch';
 import BookmarkList from './BookmarkList';
 import RouteList, { RouteCategory, SavedRoute } from './RouteList';
@@ -692,9 +693,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           <div className="section-content">
             <div className="speed-selector">
               {[
-                { labelKey: 'move.walking' as const, value: 10.8, mode: 'walking' as MoveMode },
-                { labelKey: 'move.running' as const, value: 19.8, mode: 'running' as MoveMode },
-                { labelKey: 'move.driving' as const, value: 60, mode: 'driving' as MoveMode },
+                { labelKey: 'move.walking' as const, value: MODE_SPEED_KMH.walking, mode: 'walking' as MoveMode },
+                { labelKey: 'move.running' as const, value: MODE_SPEED_KMH.running, mode: 'running' as MoveMode },
+                { labelKey: 'move.driving' as const, value: MODE_SPEED_KMH.driving, mode: 'driving' as MoveMode },
               ].map((opt) => (
                 <button
                   key={opt.value}

@@ -95,7 +95,7 @@ Multi-point Route has a **point-to-point jump** option that teleports from waypo
 
 ### Speed control
 
-- Three presets: walking 10.8, cycling 19.8, driving 60 km/h.
+- Three move modes: walking 10.8, cycling 19.5, driving 60 km/h. It starts on cycling the first time and remembers your last pick after that.
 - Enter any fixed speed, or a min to max range (for example 40 to 80 km/h) that is re-rolled for every leg to mimic real traffic.
 - Change the speed while moving and press "Apply new speed". Movement continues from the current position at the new speed, with no restart.
 - The last speed you picked is remembered for the next launch. A countdown banner appears above the map while paused at a stop.
@@ -142,7 +142,7 @@ Connect **up to three** devices at once. Teleport, Navigate, every movement mode
 
 ### Mushroom map layer (pipimushroom.com)
 
-- Shows the mushrooms, flowers and smoke points marked on [pipimushroom.com's 蘑菇地圖](https://pipimushroom.com/mfmap.aspx), filterable by kind. A marker's popup can teleport or navigate you there.
+- Shows the mushrooms, flowers and smoke points marked on [pipimushroom.com's 蘑菇地圖](https://pipimushroom.com/mfmap.aspx), filterable by kind (only mushrooms at first; tick flowers and smoke in the panel). A marker's popup can teleport or navigate you there.
 - Mushroom button in the left toolbar: click toggles the layer, right-click opens its panel. It loads at zoom 14 and above, in Taiwan, Hong Kong and Malaysia.
 - The data needs your own Google login on pipimushroom.com. LocWarp only uses the resulting cookie and never sees your Google credentials. Two ways to provide the cookie:
   - **Chrome extension (recommended):** install [`extensions/pipi-cookie-sync`](extensions/pipi-cookie-sync/README.md) and it syncs automatically.
@@ -416,6 +416,7 @@ locwarp/
 │
 ├── extensions/pipi-cookie-sync/  # Chrome extension: syncs the mushroom map login cookie
 ├── tests/pipi/              # Test scripts for the mushroom layer and extension
+├── tests/frontend/          # Tests for mode speeds and initial values (node --test)
 ├── docs/                    # Design notes (pipi-mushroom.md) and setup page
 │
 ├── LocWarp.bat / start.py   # Dev launcher (auto-elevates)

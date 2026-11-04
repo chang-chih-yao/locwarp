@@ -12,6 +12,7 @@ import { parseCoord } from '../utils/coords';
 import Supercluster from 'supercluster';
 import { usePipiMushroomLayer } from '../hooks/usePipiMushroomLayer';
 import type { PipiKinds } from '../hooks/usePipiMushroomLayer';
+import { resolvePipiKinds } from '../defaults';
 import PipiMushroomPanel from './PipiMushroomPanel';
 
 // MapLibre's Leaflet binding looks up `window.maplibregl` rather than
@@ -420,14 +421,10 @@ const MapView: React.FC<MapViewProps> = ({
     catch { return false; }
   });
   const [pipiKinds, setPipiKinds] = useState<PipiKinds>(() => {
-    const def: PipiKinds = { mushroom: true, flower: true, smoke: true };
-    try {
-      const raw = JSON.parse(localStorage.getItem('locwarp.pipi_kinds') || 'null');
-      if (raw && typeof raw === 'object') {
-        return { mushroom: raw.mushroom !== false, flower: raw.flower !== false, smoke: raw.smoke !== false };
-      }
-    } catch { /* fall through */ }
-    return def;
+    let stored: string | null = null;
+    try { stored = localStorage.getItem('locwarp.pipi_kinds'); }
+    catch { /* fall through to initial values */ }
+    return resolvePipiKinds(stored);
   });
   const [pipiPanelOpen, setPipiPanelOpen] = useState(false);
   useEffect(() => {

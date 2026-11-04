@@ -95,7 +95,7 @@
 
 ### 速度控制
 
-- 三檔預設:走路 10.8、腳踏車 19.8、開車 60 km/h。
+- 三種移動模式:走路 10.8、腳踏車 19.5、開車 60 km/h。第一次使用是腳踏車,之後記住上次選的模式。
 - 可輸入任意固定速度,或輸入最小到最大的隨機範圍(例如 40 到 80 km/h),每段路重新抽一次,模擬真實路況。
 - 移動進行中可以修改速度後按「套用新速度」,會從目前位置以新速度接續,不用停下重來。
 - 選過的速度會記住,下次開啟沿用。到點暫停時地圖上方會顯示倒數。
@@ -142,7 +142,7 @@
 
 ### 蘑菇地圖圖層(pipimushroom.com)
 
-- 在地圖上顯示 [pipimushroom.com 蘑菇地圖](https://pipimushroom.com/mfmap.aspx) 標記的蘑菇、花和煙霧點,可以依種類篩選。點標記可以直接瞬移或導航過去。
+- 在地圖上顯示 [pipimushroom.com 蘑菇地圖](https://pipimushroom.com/mfmap.aspx) 標記的蘑菇、花和煙霧點,可以依種類篩選(第一次使用只顯示蘑菇,花和煙霧要在設定面板勾選)。點標記可以直接瞬移或導航過去。
 - 左側工具列的蘑菇按鈕:左鍵開關圖層,右鍵開設定面板。放大到 zoom 14 以上才會載入,支援台灣、香港、馬來西亞。
 - 資料需要你自己在 pipimushroom.com 用 Google 登入。LocWarp 只使用登入後的 Cookie,不會碰到 Google 帳號密碼。Cookie 有兩種設定方式:
   - **Chrome 擴充功能(建議)**:裝 [`extensions/pipi-cookie-sync`](extensions/pipi-cookie-sync/README.md) 後會自動同步。
@@ -416,6 +416,7 @@ locwarp/
 │
 ├── extensions/pipi-cookie-sync/  # Chrome 擴充功能:同步蘑菇地圖登入 Cookie
 ├── tests/pipi/              # 蘑菇地圖圖層與擴充功能的測試腳本
+├── tests/frontend/          # 模式速度與初始值的測試(node --test)
 ├── docs/                    # 設計筆記(pipi-mushroom.md)與說明頁
 │
 ├── LocWarp.bat / start.py   # 開發用啟動器(自動提權)

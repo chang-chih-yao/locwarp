@@ -45,12 +45,7 @@ export function toastForFanout<T>(
 }
 
 import { SimMode, MoveMode } from './hooks/useSimulation'
-
-const SPEED_MAP: Record<MoveMode, number> = {
-  walking: 10.8,
-  running: 19.8,
-  driving: 60,
-}
+import { MODE_SPEED_KMH } from './defaults'
 
 // Number input that lets the user freely clear and retype the field (so a
 // multi-digit value like 15 is easy to enter). The draft string is held
@@ -1442,7 +1437,7 @@ const App: React.FC = () => {
     const rounds = Math.max(1, Math.round(sim.flowerRounds))
     const preW = Math.max(0, sim.flowerPreWait)
     const postW = Math.max(0, sim.flowerPostWait)
-    const defKmh = sim.moveMode === MoveMode.Running ? 19.8 : sim.moveMode === MoveMode.Driving ? 60 : 10.8
+    const defKmh = MODE_SPEED_KMH[sim.moveMode]
     const kmh = (sim.speedMinKmh != null && sim.speedMaxKmh != null)
       ? (sim.speedMinKmh + sim.speedMaxKmh) / 2
       : (sim.customSpeedKmh ?? defKmh)
@@ -1484,11 +1479,11 @@ const App: React.FC = () => {
   // Mode default km/h, used only for ControlPanel's in-panel preset
   // preview and as a very last fallback in the status bar before any
   // apply / sim start has happened.
-  const speed = SPEED_MAP[sim.moveMode] || 10.8
+  const speed = MODE_SPEED_KMH[sim.moveMode]
   const fmtSpeedFromInputs = (kmh: number | null, lo: number | null, hi: number | null): number | string => {
     if (lo != null && hi != null) return `${Math.min(lo, hi)}~${Math.max(lo, hi)}`
     if (kmh != null) return kmh
-    return SPEED_MAP[sim.moveMode] || 10.8
+    return speed
   }
 
   // Determine running/paused state from status
@@ -1620,8 +1615,8 @@ const App: React.FC = () => {
           currentPosition={currentPos}
           onModeChange={sim.setMode}
           onSpeedChange={(s: number) => {
-            if (s <= 10.8) sim.setMoveMode(MoveMode.Walking)
-            else if (s <= 19.8) sim.setMoveMode(MoveMode.Running)
+            if (s <= MODE_SPEED_KMH.walking) sim.setMoveMode(MoveMode.Walking)
+            else if (s <= MODE_SPEED_KMH.running) sim.setMoveMode(MoveMode.Running)
             else sim.setMoveMode(MoveMode.Driving)
           }}
           onMoveModeChange={sim.setMoveMode}

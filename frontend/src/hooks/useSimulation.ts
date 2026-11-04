@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import * as api from '../services/api'
 import type { WsMessage } from './useWebSocket'
 import { playCompletionAlert } from '../services/alertSound'
+import { MODE_SPEED_KMH, resolveMoveMode } from '../defaults'
 
 export enum SimMode {
   Teleport = 'teleport',
@@ -39,15 +40,6 @@ export interface SimulationStatus {
 }
 
 export type WsSubscribe = (fn: (m: WsMessage) => void) => () => void
-
-// Mode → preset km/h. Kept in sync with ControlPanel's preset buttons
-// so the status bar shows the correct "mode default" when the user
-// applies a preset without a custom km/h.
-const MODE_DEFAULT_KMH: Record<MoveMode, number> = {
-  [MoveMode.Walking]: 10.8,
-  [MoveMode.Running]: 19.8,
-  [MoveMode.Driving]: 60,
-}
 
 // ── Per-device runtime state (group mode) ──────────────────────────────
 export interface DeviceRuntime {
@@ -118,16 +110,13 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
   const primaryUdidRef = useRef<string | null>(primaryUdid ?? null)
   useEffect(() => { primaryUdidRef.current = primaryUdid ?? null }, [primaryUdid])
   const [mode, _setMode] = useState<SimMode>(SimMode.Teleport)
-  // Persisted so the user's preferred default speed survives restarts,
-  // instead of always falling back to walking.
+  // Persisted so the user's last pick survives restarts; never-picked
+  // starts on INITIAL_MOVE_MODE.
   const [moveMode, setMoveModeRaw] = useState<MoveMode>(() => {
-    try {
-      const v = localStorage.getItem('locwarp.speed.mode')
-      if (v === MoveMode.Walking || v === MoveMode.Running || v === MoveMode.Driving) {
-        return v as MoveMode
-      }
-    } catch { /* ignore */ }
-    return MoveMode.Walking
+    let v: string | null = null
+    try { v = localStorage.getItem('locwarp.speed.mode') } catch { /* ignore */ }
+    // MoveModeKey and MoveMode share the same string values.
+    return resolveMoveMode(v) as MoveMode
   })
   const setMoveMode = useCallback((m: MoveMode) => {
     setMoveModeRaw(m)
@@ -390,11 +379,11 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
   // What's *actually* running on the device — set when a route handler
   // starts or when applySpeed succeeds. Used by the status bar so the
   // user doesn't see a typed-or-preset-selected speed before it has
-  // been applied. Initialized to the walking default so the status bar
-  // has something sensible to show before the first apply / start.
+  // been applied. Initialized to the restored mode's speed so the status
+  // bar has something sensible to show before the first apply / start.
   const [effectiveSpeed, setEffectiveSpeed] = useState<
     { kmh: number | null; min: number | null; max: number | null } | null
-  >({ kmh: MODE_DEFAULT_KMH.walking, min: null, max: null })
+  >(() => ({ kmh: MODE_SPEED_KMH[moveMode], min: null, max: null }))
 
   // Per-device runtime map (group mode). Populated from WS events tagged with udid.
   const [runtimes, setRuntimes] = useState<RuntimesMap>({})
@@ -765,7 +754,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
         setProgress(0)
         const res = await api.navigate(lat, lng, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, undefined, straightLine, routeEngine)
         setStatus((prev) => ({ ...prev, running: true, paused: false }))
-        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
+        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
         return res
       } catch (err: any) {
         setError(err.message)
@@ -788,7 +777,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
         setLapProgress(null)
         const res = await api.startLoop(wps, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, { pause_enabled: pauseLoop.enabled, pause_min: pauseLoop.min, pause_max: pauseLoop.max }, undefined, straightLine, loopLapCount, routeEngine, { jump_mode: jumpMode, jump_pre_delay: jumpPreDelay, jump_post_delay: jumpPostDelay })
         setStatus((prev) => ({ ...prev, running: true, paused: false }))
-        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
+        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
         return res
       } catch (err: any) {
         setError(err.message)
@@ -809,7 +798,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
         setProgress(0)
         const res = await api.multiStop(wps, moveMode, stopDuration, loop, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, { pause_enabled: pauseLoop.enabled, pause_min: pauseLoop.min, pause_max: pauseLoop.max }, undefined, straightLine, routeEngine, { jump_mode: jumpMode, jump_pre_delay: jumpPreDelay, jump_post_delay: jumpPostDelay })
         setStatus((prev) => ({ ...prev, running: true, paused: false }))
-        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
+        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
         return res
       } catch (err: any) {
         setError(err.message)
@@ -833,7 +822,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
           teleport: flowerTeleport,
         }, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, undefined, straightLine, routeEngine)
         setStatus((prev) => ({ ...prev, running: true, paused: false }))
-        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
+        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
         return res
       } catch (err: any) {
         setError(err.message)
@@ -851,7 +840,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
         setProgress(0)
         const res = await api.randomWalk(center, radiusM, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, { pause_enabled: pauseRandomWalk.enabled, pause_min: pauseRandomWalk.min, pause_max: pauseRandomWalk.max }, undefined, undefined, straightLine, routeEngine, randomWalkCenterMode, forwardWalk)
         setStatus((prev) => ({ ...prev, running: true, paused: false }))
-        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
+        setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
         return res
       } catch (err: any) {
         setError(err.message)
@@ -974,7 +963,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
       })
       // Status bar should now reflect the just-applied values, not the
       // ones the route originally started with.
-      setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
+      setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
       return res
     } catch (err: any) {
       setError(err.message)
@@ -1073,7 +1062,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
   const applySpeedAll = useCallback(async (udids: string[]) => {
     const outcome = await fanout(udids, 'apply-speed', (u) => api.applySpeed(moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, u))
     if (outcome.ok.length > 0) {
-      setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_DEFAULT_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
+      setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
     }
     return outcome
   }, [fanout, moveMode, customSpeedKmh, speedMinKmh, speedMaxKmh])

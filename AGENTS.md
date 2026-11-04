@@ -1,3 +1,15 @@
+# LocWarp 專案重點
+
+## 工作原則
+
+- **Surface Conflicts**：兩個既有寫法互相矛盾時不要混成一份：選較新 / 測試較多的那個、說明理由、把另一個標出來待清理
+- **Tests verify intent**：測試要鎖住「為什麼」：邏輯改了測試會紅才算數（mutation check 驗的就是這件事）
+- **Fail loud**：跳過了什麼、哪裡不確定就明說；有 skipped 不能說 tests pass
+- **Checkpoint after every significant step**：每個重要步驟後回報做了什麼、驗了什麼、還剩什麼
+- 回覆使用者一律用繁體中文；派 subagent 時要求它用繁體中文回報；commit 與 tag 訊息照 repo 慣例用繁體中文
+- 註解只放在不直覺或有副作用的邏輯；docstring 詳細度隨複雜度，複雜的寫參數與回傳型別。`__init__`（類別 docstring 已說明時）與
+  名稱已說明行為的測試函式免寫
+
 ## Agent skills
 
 ### Issue tracker

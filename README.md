@@ -140,6 +140,15 @@
 - 地圖上的使用者圖示可以換成內建的 6 組角色,或上傳自己的 PNG(自動去除透明邊界)。
 - 座標格式可在 DD、DMS、DM 之間切換。
 
+### 蘑菇地圖圖層(pipimushroom.com)
+
+- 在地圖上顯示 [pipimushroom.com 蘑菇地圖](https://pipimushroom.com/mfmap.aspx) 標記的蘑菇、花和煙霧點,可以依種類篩選。點標記可以直接瞬移或導航過去。
+- 左側工具列的蘑菇按鈕:左鍵開關圖層,右鍵開設定面板。放大到 zoom 14 以上才會載入,支援台灣、香港、馬來西亞。
+- 資料需要你自己在 pipimushroom.com 用 Google 登入。LocWarp 只使用登入後的 Cookie,不會碰到 Google 帳號密碼。Cookie 有兩種設定方式:
+  - **Chrome 擴充功能(建議)**:裝 [`extensions/pipi-cookie-sync`](extensions/pipi-cookie-sync/README.md) 後會自動同步。
+  - **手動**:在面板貼上 Cookie,步驟寫在面板的說明裡。
+- 有節流設計:移動地圖時會等一下再查、已載入範圍內移動不重查、每分鐘更新一次、遇到網站限流就暫停。這個網站是第三方服務,使用時請遵守它的規範。
+
 ### 座標收藏
 
 - 新增座標時自動帶入地名與國旗,編輯後座標改變會自動更新國旗。
@@ -285,20 +294,21 @@ iOS 17 以上需要 iPhone 上掛有 Personalized DDI 才能模擬定位。LocWa
 | Frontend | [MapLibre GL](https://maplibre.org/) 6 | 向量圖層渲染,經 maplibre-gl-leaflet 掛進 Leaflet |
 | Backend | Python 3.13 + [FastAPI](https://fastapi.tiangolo.com/) + [uvicorn](https://www.uvicorn.org/) | REST API 與 WebSocket(`:8777`) |
 | Backend | [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) 11.49+ | iOS 裝置協議(DVT / RemoteServices / lockdown / LegacyLocationService)與 WiFi tunnel |
-| Backend | [httpx](https://www.python-httpx.org/)、[pydantic](https://docs.pydantic.dev/)、[gpxpy](https://github.com/tkrajina/gpxpy) | 外部服務呼叫、資料驗證、GPX 解析 |
+| Backend | [httpx](https://www.python-httpx.org/)、[pydantic](https://docs.pydantic.dev/)、[gpxpy](https://github.com/tkrajina/gpxpy)、[cryptography](https://cryptography.io/) | 外部服務呼叫、資料驗證、GPX 解析、蘑菇地圖 API 的 AES / HMAC 加密封包 |
 | 打包 | [PyInstaller](https://pyinstaller.org/)、[electron-builder](https://www.electron.build/)(NSIS) | backend exe 與 Windows 安裝檔 |
 
 介面圖示全部是 inline SVG,樣式是手寫的單一 `styles.css`,沒有使用第三方 icon 或 UI 套件。
 
 ### 外部服務
 
-全部免費。除了 Google Geocoding 需要使用者自備 key,其餘都不需要註冊。
+全部免費。Google Geocoding 需要使用者自備 key,蘑菇地圖需要使用者自己登入 pipimushroom.com,其餘都不需要註冊。
 
 | 服務 | 呼叫端 | 用途 |
 | --- | --- | --- |
 | [OSRM demo](https://project-osrm.org/)、[OSRM FOSSGIS](https://routing.openstreetmap.de/)、[Valhalla](https://valhalla1.openstreetmap.de/)、[BRouter](https://brouter.de/) | backend | 路線規劃與多點順序最佳化 |
 | [Photon (komoot)](https://photon.komoot.io/) | backend | 地址搜尋與反向地理編碼(國旗、地名) |
 | [Google Geocoding API](https://developers.google.com/maps/documentation/geocoding) | backend | 地址搜尋(選用,使用者自備 key) |
+| [pipimushroom.com](https://pipimushroom.com/mfmap.aspx) | backend | 蘑菇地圖圖層資料(使用者自己的登入 Cookie,見 [`docs/pipi-mushroom.md`](docs/pipi-mushroom.md)) |
 | [Open-Meteo](https://open-meteo.com/) | frontend | 模擬位置的天氣 |
 | [TimezoneDB](https://timezonedb.com/) | backend | 座標轉時區(內建 key) |
 | [flagcdn.com](https://flagcdn.com/) | frontend | 國旗圖片 |
@@ -330,6 +340,7 @@ iOS 17 以上需要 iPhone 上掛有 Personalized DDI 才能模擬定位。LocWa
 - **天氣由前端直連**:每個使用者用自己的 IP 計算 Open-Meteo 配額,不經 backend 轉送。
 - **圖層預先連線**:滑鼠移到圖層選單時,預先對所有圖層的主機建立連線並抓取向量圖層的 style,縮短第一次切換的等待。
 - **多裝置群組**:primary 裝置不會被後插的裝置取代,後插的裝置會同步到 primary 的位置並接續任務。
+- **蘑菇地圖代理**:backend 實作網站的加密 API 封包,並把使用者瀏覽器的 Cookie 原樣轉送,網站換新登入 Cookie 時也跟著更新。對網站的請求一次只發一個、間隔至少 1 秒,結果快取 30 秒。Cookie 不會回傳給前端。細節見 [`docs/pipi-mushroom.md`](docs/pipi-mushroom.md)。
 
 ### 開發環境
 
@@ -402,6 +413,10 @@ locwarp/
 │   │   └── services/api.ts
 │   ├── build/               # 圖示與安裝程式圖片
 │   └── package.json         # electron-builder 設定
+│
+├── extensions/pipi-cookie-sync/  # Chrome 擴充功能:同步蘑菇地圖登入 Cookie
+├── tests/pipi/              # 蘑菇地圖圖層與擴充功能的測試腳本
+├── docs/                    # 設計筆記(pipi-mushroom.md)與說明頁
 │
 ├── LocWarp.bat / start.py   # 開發用啟動器(自動提權)
 ├── stop.py

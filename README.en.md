@@ -140,6 +140,15 @@ Connect **up to three** devices at once. Teleport, Navigate, every movement mode
 - The map marker can be swapped for one of six built-in characters or your own PNG (transparent borders are trimmed automatically).
 - Coordinates can be shown as DD, DMS, or DM.
 
+### Mushroom map layer (pipimushroom.com)
+
+- Shows the mushrooms, flowers and smoke points marked on [pipimushroom.com's 蘑菇地圖](https://pipimushroom.com/mfmap.aspx), filterable by kind. A marker's popup can teleport or navigate you there.
+- Mushroom button in the left toolbar: click toggles the layer, right-click opens its panel. It loads at zoom 14 and above, in Taiwan, Hong Kong and Malaysia.
+- The data needs your own Google login on pipimushroom.com. LocWarp only uses the resulting cookie and never sees your Google credentials. Two ways to provide the cookie:
+  - **Chrome extension (recommended):** install [`extensions/pipi-cookie-sync`](extensions/pipi-cookie-sync/README.md) and it syncs automatically.
+  - **Manual:** paste the cookie in the panel, following the steps in the panel's help text.
+- Throttled by design: it waits after map moves, doesn't refetch inside the area already loaded, refreshes once a minute, and pauses when the site rate-limits. It is a third-party service; follow its terms.
+
 ### Saved coordinates
 
 - New entries pick up a place name and a country flag automatically, and the flag refreshes when the coordinates are edited.
@@ -285,20 +294,21 @@ When reporting a problem, include the iOS version, the connection type, and `~/.
 | Frontend | [MapLibre GL](https://maplibre.org/) 6 | Vector layer rendering, attached to Leaflet through maplibre-gl-leaflet |
 | Backend | Python 3.13 + [FastAPI](https://fastapi.tiangolo.com/) + [uvicorn](https://www.uvicorn.org/) | REST API and WebSocket (`:8777`) |
 | Backend | [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) 11.49+ | iOS device protocols (DVT / RemoteServices / lockdown / LegacyLocationService) and the Wi-Fi tunnel |
-| Backend | [httpx](https://www.python-httpx.org/), [pydantic](https://docs.pydantic.dev/), [gpxpy](https://github.com/tkrajina/gpxpy) | External service calls, validation, GPX parsing |
+| Backend | [httpx](https://www.python-httpx.org/), [pydantic](https://docs.pydantic.dev/), [gpxpy](https://github.com/tkrajina/gpxpy), [cryptography](https://cryptography.io/) | External service calls, validation, GPX parsing, the mushroom map API's AES / HMAC envelope |
 | Packaging | [PyInstaller](https://pyinstaller.org/), [electron-builder](https://www.electron.build/) (NSIS) | Backend exe and the Windows installer |
 
 All icons are inline SVG and the styling is a single hand-written `styles.css`. No third-party icon or UI kit is used.
 
 ### External services
 
-All free. Only Google Geocoding needs a key, which the user supplies. Nothing else needs a signup.
+All free. Google Geocoding needs a key, which the user supplies, and the mushroom map needs the user's own pipimushroom.com login. Nothing else needs a signup.
 
 | Service | Called from | Purpose |
 | --- | --- | --- |
 | [OSRM demo](https://project-osrm.org/), [OSRM FOSSGIS](https://routing.openstreetmap.de/), [Valhalla](https://valhalla1.openstreetmap.de/), [BRouter](https://brouter.de/) | backend | Routing and waypoint order optimisation |
 | [Photon (komoot)](https://photon.komoot.io/) | backend | Address search and reverse geocoding (flag, place name) |
 | [Google Geocoding API](https://developers.google.com/maps/documentation/geocoding) | backend | Address search (optional, user-supplied key) |
+| [pipimushroom.com](https://pipimushroom.com/mfmap.aspx) | backend | Mushroom map layer data (with the user's own login cookie, see [`docs/pipi-mushroom.md`](docs/pipi-mushroom.md)) |
 | [Open-Meteo](https://open-meteo.com/) | frontend | Weather at the simulated position |
 | [TimezoneDB](https://timezonedb.com/) | backend | Coordinate to time zone (built-in key) |
 | [flagcdn.com](https://flagcdn.com/) | frontend | Flag images |
@@ -330,6 +340,7 @@ Reverse geocoding does not use the public Nominatim server. Its usage policy cou
 - **Weather straight from the frontend**: each user spends their own Open-Meteo quota by IP rather than going through the backend.
 - **Layer preconnect**: hovering the layer picker opens connections to every layer's host and fetches the vector styles, which shortens the wait on the first switch.
 - **Multi-device group**: the primary device is never displaced by one plugged in later. The newcomer syncs to the primary's position and joins its task.
+- **Mushroom map proxy**: the backend implements the site's encrypted API envelope and forwards the user's browser cookie verbatim, picking up the site's login renewals. Upstream calls go one at a time, at least 1 s apart, with results cached for 30 s. The cookie is never returned to the frontend. Details in [`docs/pipi-mushroom.md`](docs/pipi-mushroom.md).
 
 ### Development setup
 
@@ -402,6 +413,10 @@ locwarp/
 │   │   └── services/api.ts
 │   ├── build/               # Icons and installer artwork
 │   └── package.json         # electron-builder config
+│
+├── extensions/pipi-cookie-sync/  # Chrome extension: syncs the mushroom map login cookie
+├── tests/pipi/              # Test scripts for the mushroom layer and extension
+├── docs/                    # Design notes (pipi-mushroom.md) and setup page
 │
 ├── LocWarp.bat / start.py   # Dev launcher (auto-elevates)
 ├── stop.py

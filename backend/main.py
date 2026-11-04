@@ -16,6 +16,7 @@ from services.bookmarks import BookmarkManager
 from services.route_store import RouteManager
 from services.coord_format import CoordinateFormatter
 from services.reconnect import ReconnectManager
+from services.pipi_mushroom import PipiMushroomClient
 
 # Configure logging — console + rotating file in ~/.locwarp/logs/
 _log_fmt = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
@@ -72,7 +73,20 @@ class AppState:
         # idle Network tunnels so iOS doesn't drop the RSD socket when the
         # phone screen turns off. Default ON; user can toggle in the panel.
         self._wifi_keepalive_enabled: bool = True
+        # Pipi Mushroom 蘑菇地圖 overlay: Cookie header the user copied from
+        # their logged-in browser (never returned to the frontend).
+        self._pipi_cookie: str = ""
+        self._pipi_cookie_source: str | None = None  # "manual" | "extension"
+        self._pipi_cookie_updated_at: int | None = None  # epoch ms
+        self.pipi_client = PipiMushroomClient(on_cookie_renewed=self._on_pipi_cookie_renewed)
         self._load_settings()
+
+    def _on_pipi_cookie_renewed(self, header: str) -> None:
+        """pipimushroom.com renewed the login via Set-Cookie: persist it so
+        a restart doesn't come back with the expired copy. `updated_at`
+        stays (it records when the user / extension last set the cookie)."""
+        self._pipi_cookie = header
+        self.save_settings()
 
     def _load_settings(self):
         from services.json_safe import safe_load_json
@@ -105,6 +119,14 @@ class AppState:
             ka = data.get("wifi_keepalive_enabled")
             if isinstance(ka, bool):
                 self._wifi_keepalive_enabled = ka
+            pc = data.get("pipi_cookie")
+            if isinstance(pc, str) and pc:
+                self._pipi_cookie = pc
+                self.pipi_client.set_cookie(pc)
+                src = data.get("pipi_cookie_source")
+                self._pipi_cookie_source = src if src in ("manual", "extension") else "manual"
+                ts = data.get("pipi_cookie_updated_at")
+                self._pipi_cookie_updated_at = int(ts) if isinstance(ts, (int, float)) else None
         except (ValueError, KeyError):
             logger.warning("Settings payload field malformed; keeping defaults", exc_info=True)
 
@@ -119,6 +141,9 @@ class AppState:
             "google_geocode_key": self._google_geocode_key,
             "arcgis_geocode_key": self._arcgis_geocode_key,
             "wifi_keepalive_enabled": self._wifi_keepalive_enabled,
+            "pipi_cookie": self._pipi_cookie,
+            "pipi_cookie_source": self._pipi_cookie_source,
+            "pipi_cookie_updated_at": self._pipi_cookie_updated_at,
         }
         safe_write_json(SETTINGS_FILE, data)
 
@@ -680,6 +705,7 @@ async def lifespan(application: FastAPI):
             pass
 
     app_state.save_settings()
+    await app_state.pipi_client.aclose()
     await app_state.device_manager.disconnect_all()
     logger.info("LocWarp shut down")
 
@@ -706,6 +732,7 @@ from api.recent import router as recent_router
 from api.websocket import router as ws_router
 from api.system import router as system_router
 from api.phone_control import router as phone_router
+from api.pipi import router as pipi_router
 
 app.include_router(device_router)
 app.include_router(location_router)
@@ -716,6 +743,7 @@ app.include_router(bookmarks_router)
 app.include_router(recent_router)
 app.include_router(ws_router)
 app.include_router(phone_router)
+app.include_router(pipi_router)
 
 
 @app.get("/")

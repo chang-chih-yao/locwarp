@@ -1433,6 +1433,52 @@ textarea:focus {
   color: var(--text-primary) !important;
 }
 
+/* Pipi Mushroom 蘑菇地圖 markers */
+.pipi-pin {
+  background: transparent;
+  border: none;
+}
+
+.pipi-pin-inner {
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.pipi-pin-inner img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.pipi-pin-inner.pipi-mushroom { border-color: #ff9f43; }
+.pipi-pin-inner.pipi-flower { border-color: #ff6fa8; }
+.pipi-pin-inner.pipi-smoke { border-color: #9aa3b2; }
+
+.pipi-pin-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #9aa3b2;
+}
+
+/* The popup wrapper already draws the frame; drop .map-popup's own. */
+.pipi-popup-body {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
 /* ---------- Error Toast ---------- */
 .error-toast {
   position: fixed;

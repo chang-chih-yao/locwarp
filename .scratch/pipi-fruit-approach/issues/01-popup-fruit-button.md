@@ -1,6 +1,6 @@
 # 01 蘑菇地圖花的 popup 加「瞬移+撈水果」按鈕
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: feature
 
@@ -122,3 +122,33 @@ Type: feature
     - Q19：群組模式只要有一台瞬移失敗就全部不走。沒有採用 review 跟 agent 建議的「只讓成功的走」。
     - Q20：GLOSSARY 新增花農專用模式。
     - Q21：commit 照上面的方式拆。
+- 2026-11-05：實作在 `fc5c19e`。
+  - 測試：前端 77/77（0 skipped），`npm run build` 通過。12 個 mutation 都讓測試變紅，包括「只讓成功的走」（Q19）、沒等瞬移就導航、不強制直線、不跳過 `preSyncStart`、拿掉 `wiltingMs`「有值」的判斷。
+  - 人工驗證（agent 用 `start.py` 啟動，在瀏覽器驗）：
+    - 驗證時有一台手機透過 Wi-Fi 通道連著，跟票裡「沒接裝置」的假設不同。為了不動到手機，瞬移、導航、最近地點的請求都在瀏覽器攔截 `fetch`、回假結果，沒有送到後端；後端 log 確認沒有收到這些請求。驗完把篩選設定還原，並重新整理頁面。
+    - 只有盛開的花有第三顆按鈕：點開 241 個 popup，跟同一份資料的種類、`state`、`wiltingMs` 對照，0 筆不符。盛開的花 126 個都有；花苞（Bud、Leaf 各 1 個）、蘑菇 105 個、煙霧 8 個都沒有。資料裡沒有已枯萎、還留在地圖上的花，這一條只靠單元測試。
+    - 第三顆按鈕在下一排，寬度跟整排一樣（173 px）。
+    - 瞬移回失敗時：只送出瞬移，座標在花的正東 29.97 m（haversine）；沒有導航、沒有記最近地點，錯誤跟一般瞬移一樣顯示在畫面上方。
+    - 瞬移回成功時：66 ms 後送出導航，座標是花、`straight_line: true`；最近地點記一筆花的座標，類別是 `navigate`。
+    - 這些驗證做在 code review 的修正之前。那些修正只動到型別、群組路徑的常數（值不變）、註解和一行 CSS 註解，單機行為和 popup HTML 都沒變，所以沒有重做。
+  - 沒驗到：
+    - 群組模式（只有一台裝置）。瀏覽器沒驗；`setCurrentPosition`、150 ms 等待、提示內容也沒有自動測試，只有 `runFruitApproach` 的單元測試和型別檢查。
+    - 使用者用手機實測遊戲裡拿不拿得到水果。
+  - 票裡沒明講、實作時決定的：
+    - 沒有任何裝置瞬移成功（零台）也算中止。
+    - 「沒有任何裝置開始走」也包含導航失敗：單機 `sim.navigate` 丟錯、群組 `navigateAll` 全部失敗時，都不記最近地點。這跟「導航到這裡」不管成敗都記的做法不同。
+    - popup 遇到沒有對應的 `data-pipi-act` 時不做事，並 `console.error`。
+  - code review（Standards、Spec 兩軸）：
+    - 採納：
+      - 補上 `wiltingMs` 沒有值的測試。
+      - 修正 docs 把枯萎條件寫反的地方。
+      - 程式註解不用「盛開期」，因為 GLOSSARY 沒有這個詞條。
+      - 測試檔頭寫明 Q 編號的出處。
+      - `fanoutStatusList` 改用 `FanoutOutcome`。
+      - 150 ms 抽成 `GROUP_SETTLE_MS`。
+      - 拿掉 CSS 只是重述的註解。
+      - docs 寫明票裡沒有給往東的理由。
+    - 沒採納：
+      - Data Clumps：`lat, lng` 分開傳是整個 codebase 的慣例。
+      - `App.tsx` 的 Divergent Change：toast helper 就是為了這個流程抽出來的。
+  - 跟這張票無關、沒有修：`start.py` 的輸出接到 pipe 時，cp950 印不出 `✓` 會當掉，要設 `PYTHONUTF8=1`。

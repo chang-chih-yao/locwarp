@@ -20,7 +20,7 @@ export interface PipiMarkerSelection<T> {
   items: T[];
   /** 上限截斷: more than `cap` items pass `shouldShow`. Exactly `cap` is not. */
   capped: boolean;
-  /** 畫面內缺點: more than `cap` items that pass `shouldShow` sit inside the view. */
+  /** 畫面內缺點: an item that passes `shouldShow` and sits inside the view is not in `items`. */
   viewCapped: boolean;
 }
 
@@ -42,7 +42,8 @@ export interface PipiMarkerSelection<T> {
  * @param req.cap the 點位上限.
  * @param req.keepId the item whose popup is open, or null. When it passes
  *   `shouldShow` but misses the cut it is drawn as one extra, pushing nothing
- *   out, and it changes neither `capped` nor `viewCapped`.
+ *   out. It never changes `capped`; `viewCapped` looks at what is drawn, so
+ *   the extra clears it when it was the only point inside the view left out.
  */
 export function selectPipiMarkers<T extends { id: string }>(req: {
   items: readonly T[];
@@ -61,17 +62,19 @@ export function selectPipiMarkers<T extends { id: string }>(req: {
   const halfH = height / 2;
   const ranked = shown.map((item) => {
     const p = point(item);
-    return { item, d: Math.max(Math.abs(p.x - center.x) / halfW, Math.abs(p.y - center.y) / halfH) };
+    return { item, frameDist: Math.max(Math.abs(p.x - center.x) / halfW, Math.abs(p.y - center.y) / halfH) };
   });
   // Array.prototype.sort is stable, which is what keeps ties in input order.
-  ranked.sort((a, b) => a.d - b.d);
+  ranked.sort((a, b) => a.frameDist - b.frameDist);
   const chosen = ranked.slice(0, cap);
-  // Sorted, so the nearest point left out decides it; the kept popup below
-  // is an extra on top of the cap and doesn't change this.
-  const viewCapped = ranked[cap].d <= 1;
+  let keep: (typeof ranked)[number] | undefined;
   if (req.keepId !== null && !chosen.some((r) => r.item.id === req.keepId)) {
-    const keep = ranked.find((r) => r.item.id === req.keepId);
+    keep = ranked.find((r) => r.item.id === req.keepId);
     if (keep) chosen.push(keep);
   }
+  // Sorted, so the nearest point not drawn decides it: ranked[cap], or the
+  // one after it when ranked[cap] is the kept popup drawn as the extra.
+  const missed = ranked[cap] === keep ? ranked[cap + 1] : ranked[cap];
+  const viewCapped = missed !== undefined && missed.frameDist <= 1;
   return { items: chosen.map((r) => r.item), capped: true, viewCapped };
 }

@@ -148,6 +148,40 @@ test('畫面內的點位剛好等於點位上限、打開中 popup 的點位在�
   assert.equal(r.viewCapped, false);
 });
 
+test('畫面內的點位比點位上限多一個、多出來的正好是打開中 popup 的點位：畫面內全畫出來，不算畫面內缺點', () => {
+  const r = select([
+    pt('a', 100, 0),
+    pt('b', 200, 0),
+    pt('popup', 300, 0),
+    pt('out-right', 800, 0),
+  ], { cap: 2, keepId: 'popup' });
+  assert.deepEqual(ids(r), ['a', 'b', 'popup']);
+  assert.equal(r.capped, true);
+  assert.equal(r.viewCapped, false);
+});
+
+test('額外多畫了打開中 popup 的點位，畫面內仍有沒畫出來的點位：算畫面內缺點', () => {
+  // The popup is the one right after the cap, but the next one is inside too.
+  const next = select([
+    pt('a', 100, 0),
+    pt('b', 200, 0),
+    pt('popup', 300, 0),
+    pt('c', 400, 0),
+  ], { cap: 2, keepId: 'popup' });
+  assert.deepEqual(ids(next), ['a', 'b', 'popup']);
+  assert.equal(next.viewCapped, true);
+
+  // The popup is outside the view, and one more inside than the cap.
+  const outside = select([
+    pt('a', 100, 0),
+    pt('b', 200, 0),
+    pt('c', 300, 0),
+    pt('popup', 0, 500),
+  ], { cap: 2, keepId: 'popup' });
+  assert.deepEqual(ids(outside), ['a', 'b', 'popup']);
+  assert.equal(outside.viewCapped, true);
+});
+
 test('畫面框距離相同時照輸入順序入選', () => {
   // All three sit at 0.5: 350 / 700 = 212.5 / 425.
   const r = select([

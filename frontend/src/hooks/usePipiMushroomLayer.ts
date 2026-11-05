@@ -53,8 +53,9 @@ export interface PipiLayerStatus {
   phase: PipiPhase;
   shown: number;
   truncated: boolean;
-  // 畫面內缺點 (GLOSSARY.md). Set by every rebuild and reselect, not by prune;
-  // false wherever `shown` goes to 0.
+  // 畫面內缺點 (GLOSSARY.md). Set by every rebuild and reselect; off, no
+  // cookie, below the min zoom and hidden reset it to false. Prune leaves it
+  // as is, even if it empties the layer.
   viewCapped: boolean;
   updatedAt: number | null;
   error: string | null;
@@ -389,6 +390,10 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
     };
 
     const addMarker = (it: PipiItem, now: number) => {
+      // Already drawn: kept by a reselect, or an id the site repeated. A
+      // second set() would orphan the first marker out of prune's and
+      // reselect's reach.
+      if (drawn.has(it.id)) return;
       const kind = kindOf(it);
       // Decided when the marker is built (rebuild or reselect); prune never re-checks it.
       const ribbon = ribbonEndMs(it, now) !== null;
@@ -452,7 +457,7 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
         layer.removeLayer(e.marker);
         drawn.delete(id);
       }
-      for (const it of picked.items) if (!drawn.has(it.id)) addMarker(it, now);
+      for (const it of picked.items) addMarker(it, now);
       const shown = drawn.size;
       setStatus((s) => ({ ...s, shown, viewCapped: picked.viewCapped }));
     };

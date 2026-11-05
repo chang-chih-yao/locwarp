@@ -145,6 +145,7 @@ Connect **up to three** devices at once. Teleport, Navigate, every movement mode
 - Shows the mushrooms, flowers and smoke points marked on [pipimushroom.com's 蘑菇地圖](https://pipimushroom.com/mfmap.aspx), filterable by kind (only mushrooms at first; tick flowers and smoke in the panel). A marker's popup can teleport or navigate you there.
 - Flowers have two sub-options. **Ribbon flowers only** keeps just the ribbon flowers (bloomed less than an hour ago). Unticking **Show common flowers** hides the four common species, the White, Red, Yellow and Blue "Common" flowers, together with their buds. Combine them to see only the ribbon flowers that aren't common. While Flowers is off, both are greyed out but keep their ticks.
 - Ribbon flowers get a rainbow ring, and their popup shows how much of the ribbon period is left.
+- **Marker size** in the panel picks Small, Medium (the default) or Large.
 - Mushroom button in the left toolbar: click toggles the layer, right-click opens its panel. It loads at zoom 14 and above, in Taiwan, Hong Kong and Malaysia.
 - The data needs your own Google login on pipimushroom.com. LocWarp only uses the resulting cookie and never sees your Google credentials. Two ways to provide the cookie:
   - **Chrome extension (recommended):** install [`extensions/pipi-cookie-sync`](extensions/pipi-cookie-sync/README.md) and it syncs automatically.

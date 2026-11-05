@@ -32,6 +32,11 @@ export const INITIAL_PIPI_FLOWER_FILTER: Readonly<PipiFlowerFilter> = {
   showCommon: true,
 };
 
+/** 標記大小（GLOSSARY.md）：小、中、大三級。 */
+export type PipiMarkerSize = 'small' | 'medium' | 'large';
+
+export const INITIAL_PIPI_MARKER_SIZE: PipiMarkerSize = 'medium';
+
 /** Stored `locwarp.speed.mode` value → move mode; anything unrecognised gets the initial mode. */
 export function resolveMoveMode(stored: string | null): MoveModeKey {
   return stored === 'walking' || stored === 'running' || stored === 'driving' ? stored : INITIAL_MOVE_MODE;
@@ -66,4 +71,9 @@ export function resolvePipiKinds(storedJson: string | null): Record<PipiKindKey,
 /** Stored `locwarp.pipi_flower_filter` JSON → 花的子篩選, as {@link resolveSwitches} with INITIAL_PIPI_FLOWER_FILTER. */
 export function resolvePipiFlowerFilter(storedJson: string | null): PipiFlowerFilter {
   return resolveSwitches(storedJson, INITIAL_PIPI_FLOWER_FILTER);
+}
+
+/** Stored `locwarp.pipi_marker_size` value → 標記大小; anything unrecognised gets the initial size. */
+export function resolvePipiMarkerSize(stored: string | null): PipiMarkerSize {
+  return stored === 'small' || stored === 'medium' || stored === 'large' ? stored : INITIAL_PIPI_MARKER_SIZE;
 }

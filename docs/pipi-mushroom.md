@@ -16,9 +16,9 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`.
 | Protocol client | `backend/services/pipi_mushroom.py` | API session, AES/HMAC envelope, throttle, cache, Set-Cookie renewal, item normalisation |
 | API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items` |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
-| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling |
+| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`: 普花 / 彩帶花 checks, the 花的子篩選, and the popup's 彩帶期 countdown (see Flowers below) |
-| Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), cookie paste/clear, status |
+| Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
 | Extension | `extensions/pipi-cookie-sync/` | pushes the browser's Cookie header to `127.0.0.1:8777` (user guide: its `README.md`) |
 

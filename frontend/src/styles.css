@@ -1439,12 +1439,14 @@ textarea:focus {
   border: none;
 }
 
+/* Sizes come from the hook's MARKER_PX (標記大小) as inline --pipi-* custom
+   properties; the fallbacks are the 小 size. */
 .pipi-pin-inner {
-  width: 30px;
-  height: 30px;
+  width: var(--pipi-box, 30px);
+  height: var(--pipi-box, 30px);
   box-sizing: border-box;
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: var(--pipi-ring, 2px) solid #fff;
   background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   display: flex;
@@ -1455,8 +1457,8 @@ textarea:focus {
 }
 
 .pipi-pin-inner img {
-  width: 26px;
-  height: 26px;
+  width: calc(var(--pipi-box, 30px) - 2 * var(--pipi-ring, 2px));
+  height: calc(var(--pipi-box, 30px) - 2 * var(--pipi-ring, 2px));
   object-fit: contain;
   pointer-events: none;
 }
@@ -1465,7 +1467,7 @@ textarea:focus {
 .pipi-pin-inner.pipi-flower { border-color: #ff6fa8; }
 .pipi-pin-inner.pipi-smoke { border-color: #9aa3b2; }
 
-/* 彩帶花: rainbow ring instead of the pink border, same 30px box. Painted as
+/* 彩帶花: rainbow ring instead of the pink border, same box and ring width. Painted as
    the element's own border-box background behind a transparent border; a
    pseudo-element ring would be clipped by overflow: hidden. */
 .pipi-pin-inner.pipi-flower.pipi-ribbon {
@@ -1476,8 +1478,8 @@ textarea:focus {
 }
 
 .pipi-pin-dot {
-  width: 10px;
-  height: 10px;
+  width: var(--pipi-dot, 10px);
+  height: var(--pipi-dot, 10px);
   border-radius: 50%;
   background: #9aa3b2;
 }

@@ -8,7 +8,7 @@ import {
   pipiStatus,
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
-import type { PipiFlowerFilter } from '../defaults';
+import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
 import { fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 
 // Pipi Mushroom 蘑菇地圖 overlay: fetches player-reported mushrooms / flowers
@@ -34,6 +34,16 @@ const MAX_MARKERS = 1500;
 const STOP_CODES = new Set(['pipi_no_cookie', 'pipi_login_required', 'pipi_cookie_invalid']);
 const ASSET_PREFIX = 'https://pipimushroom.com/';
 
+// 標記大小 → px, the source of truth: these reach styles.css as inline
+// --pipi-* custom properties (its fallbacks only cover a missing property),
+// so the Leaflet icon box and the CSS circle can't drift apart. The image
+// fills the circle inside the ring.
+const MARKER_PX: Record<PipiMarkerSize, { box: number; ring: number; dot: number }> = {
+  small: { box: 30, ring: 2, dot: 10 },
+  medium: { box: 40, ring: 3, dot: 13 },
+  large: { box: 50, ring: 4, dot: 17 },
+};
+
 export type PipiPhase = 'off' | 'no_cookie' | 'zoom' | 'region' | 'loading' | 'ok' | 'error';
 export interface PipiLayerStatus {
   phase: PipiPhase;
@@ -52,6 +62,7 @@ interface Options {
   enabled: boolean;
   kinds: PipiKinds;
   flowerFilter: PipiFlowerFilter;
+  markerSize: PipiMarkerSize;
   onTeleport: (lat: number, lng: number) => void;
   onNavigate: (lat: number, lng: number) => void;
   t: TFn;
@@ -132,7 +143,7 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
   </div>`;
 }
 
-export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, onTeleport, onNavigate, t }: Options) {
+export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, markerSize, onTeleport, onNavigate, t }: Options) {
   // null = unknown (backend not reachable yet); we still try to load.
   const [configured, setConfigured] = useState<boolean | null>(null);
   // offset: server clock - local clock. lngShift: multiple of 360 that moves
@@ -280,6 +291,9 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, onT
     }
     const { res, offset, lngShift } = data;
     const now = Date.now() + offset;
+    const px = MARKER_PX[markerSize];
+    const pxStyle = `--pipi-box:${px.box}px;--pipi-ring:${px.ring}px;--pipi-dot:${px.dot}px`;
+    const half = px.box / 2;
     const layer = L.layerGroup();
     const icons = new Map<string, L.DivIcon>();
     const entries: Array<{ marker: L.Marker; end?: number }> = [];
@@ -304,13 +318,13 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, onT
       if (!icon) {
         icon = L.divIcon({
           className: 'pipi-pin',
-          html: `<div class="pipi-pin-inner pipi-${kind}${ribbon ? ' pipi-ribbon' : ''}">${img
+          html: `<div class="pipi-pin-inner pipi-${kind}${ribbon ? ' pipi-ribbon' : ''}" style="${pxStyle}">${img
             ? `<img src="${escapeHtml(img)}" alt="" draggable="false" />`
             : '<span class="pipi-pin-dot"></span>'}</div>`,
-          iconSize: [30, 30],
-          iconAnchor: [15, 15],
-          popupAnchor: [0, -14],
-          tooltipAnchor: [0, -14],
+          iconSize: [px.box, px.box],
+          iconAnchor: [half, half],
+          popupAnchor: [0, 1 - half],
+          tooltipAnchor: [0, 1 - half],
         });
         icons.set(iconKey, icon);
       }
@@ -362,7 +376,7 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, onT
     };
   }, [
     data, enabled, kinds.mushroom, kinds.flower, kinds.smoke,
-    flowerFilter.ribbonOnly, flowerFilter.showCommon, mapRef,
+    flowerFilter.ribbonOnly, flowerFilter.showCommon, markerSize, mapRef,
   ]);
 
   const refresh = useCallback(() => setReloadToken((x) => x + 1), []);

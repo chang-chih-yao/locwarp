@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { describePipiError } from '../services/api';
 import type { PipiCookieResult, PipiKind, PipiStatusResponse } from '../services/api';
-import type { PipiFlowerFilter } from '../defaults';
+import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
 import { PIPI_MIN_ZOOM } from '../hooks/usePipiMushroomLayer';
 import type { PipiKinds, PipiLayerStatus } from '../hooks/usePipiMushroomLayer';
 
@@ -12,6 +12,8 @@ interface Props {
   onKindsChange: (k: PipiKinds) => void;
   flowerFilter: PipiFlowerFilter;
   onFlowerFilterChange: (f: PipiFlowerFilter) => void;
+  markerSize: PipiMarkerSize;
+  onMarkerSizeChange: (s: PipiMarkerSize) => void;
   status: PipiLayerStatus;
   configured: boolean | null;
   cookieInfo: Pick<PipiStatusResponse, 'source' | 'updated_at'>;
@@ -32,6 +34,8 @@ const FLOWER_FILTER_ORDER: { key: keyof PipiFlowerFilter; labelKey: string }[] =
   { key: 'ribbonOnly', labelKey: 'map.pipi_flower_ribbon_only' },
   { key: 'showCommon', labelKey: 'map.pipi_flower_show_common' },
 ];
+const MARKER_SIZE_ORDER: PipiMarkerSize[] = ['small', 'medium', 'large'];
+const PANEL_ACCENT = '#ff9f43';
 
 function clock(ms: number): string {
   const d = new Date(ms);
@@ -39,8 +43,8 @@ function clock(ms: number): string {
 }
 
 const PipiMushroomPanel: React.FC<Props> = ({
-  enabled, onEnabledChange, kinds, onKindsChange, flowerFilter, onFlowerFilterChange, status, configured,
-  cookieInfo, onRefresh, onSaveCookie, onClearCookie, onClose, t,
+  enabled, onEnabledChange, kinds, onKindsChange, flowerFilter, onFlowerFilterChange, markerSize, onMarkerSizeChange,
+  status, configured, cookieInfo, onRefresh, onSaveCookie, onClearCookie, onClose, t,
 }) => {
   const cookieBadge = !configured
     ? t('map.pipi_cookie_unset')
@@ -169,6 +173,19 @@ const PipiMushroomPanel: React.FC<Props> = ({
             />
             {t(labelKey)}
           </label>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: '#c7d0e4', marginRight: 2 }}>{t('map.pipi_marker_size')}</span>
+        {MARKER_SIZE_ORDER.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onMarkerSizeChange(s)}
+            style={chip(markerSize === s, PANEL_ACCENT)}
+            aria-pressed={markerSize === s}
+          >{t(`map.pipi_marker_size_${s}`)}</button>
         ))}
       </div>
 

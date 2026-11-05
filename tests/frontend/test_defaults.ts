@@ -18,6 +18,7 @@ import {
   resolveMoveMode,
   resolvePipiFlowerFilter,
   resolvePipiKinds,
+  resolvePipiMarkerSize,
 } from '../../frontend/src/defaults.ts';
 
 const repo = join(import.meta.dirname, '..', '..');
@@ -83,6 +84,18 @@ test('壞掉或不是物件的花的子篩選設定整份用初始值', () => {
   for (const bad of ['not json', '"ribbonOnly"', '42', 'null', '[true,false]']) {
     assert.deepEqual(resolvePipiFlowerFilter(bad), { ...INITIAL_PIPI_FLOWER_FILTER }, bad);
   }
+});
+
+test('沒存過標記大小時是中', () => {
+  assert.equal(resolvePipiMarkerSize(null), 'medium');
+});
+
+test('存過的標記大小原樣保留', () => {
+  for (const s of ['small', 'medium', 'large'] as const) assert.equal(resolvePipiMarkerSize(s), s);
+});
+
+test('無法辨識的標記大小退回中', () => {
+  for (const bad of ['', 'huge', 'Small', '"small"', '40']) assert.equal(resolvePipiMarkerSize(bad), 'medium', bad);
 });
 
 // Imports backend/config.py with the repo's .venv Python, so the checks below

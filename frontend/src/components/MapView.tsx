@@ -12,8 +12,8 @@ import { parseCoord } from '../utils/coords';
 import Supercluster from 'supercluster';
 import { usePipiMushroomLayer } from '../hooks/usePipiMushroomLayer';
 import type { PipiKinds } from '../hooks/usePipiMushroomLayer';
-import { resolvePipiFlowerFilter, resolvePipiKinds } from '../defaults';
-import type { PipiFlowerFilter } from '../defaults';
+import { resolvePipiFlowerFilter, resolvePipiKinds, resolvePipiMarkerSize } from '../defaults';
+import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
 import PipiMushroomPanel from './PipiMushroomPanel';
 
 // MapLibre's Leaflet binding looks up `window.maplibregl` rather than
@@ -433,6 +433,12 @@ const MapView: React.FC<MapViewProps> = ({
     catch { /* fall through to initial values */ }
     return resolvePipiFlowerFilter(stored);
   });
+  const [pipiMarkerSize, setPipiMarkerSize] = useState<PipiMarkerSize>(() => {
+    let stored: string | null = null;
+    try { stored = localStorage.getItem('locwarp.pipi_marker_size'); }
+    catch { /* fall through to the initial size */ }
+    return resolvePipiMarkerSize(stored);
+  });
   const [pipiPanelOpen, setPipiPanelOpen] = useState(false);
   useEffect(() => {
     try { localStorage.setItem('locwarp.pipi_enabled', pipiEnabled ? '1' : '0'); }
@@ -446,6 +452,10 @@ const MapView: React.FC<MapViewProps> = ({
     try { localStorage.setItem('locwarp.pipi_flower_filter', JSON.stringify(pipiFlowerFilter)); }
     catch { /* ignore */ }
   }, [pipiFlowerFilter]);
+  useEffect(() => {
+    try { localStorage.setItem('locwarp.pipi_marker_size', pipiMarkerSize); }
+    catch { /* ignore */ }
+  }, [pipiMarkerSize]);
 
   const [recentOpen, setRecentOpen] = useState(false);
   // Clear-button confirmation state. First click flips the single
@@ -1956,6 +1966,7 @@ const MapView: React.FC<MapViewProps> = ({
     enabled: pipiEnabled,
     kinds: pipiKinds,
     flowerFilter: pipiFlowerFilter,
+    markerSize: pipiMarkerSize,
     onTeleport,
     onNavigate,
     t,
@@ -2238,6 +2249,8 @@ const MapView: React.FC<MapViewProps> = ({
           onKindsChange={setPipiKinds}
           flowerFilter={pipiFlowerFilter}
           onFlowerFilterChange={setPipiFlowerFilter}
+          markerSize={pipiMarkerSize}
+          onMarkerSizeChange={setPipiMarkerSize}
           status={pipi.status}
           configured={pipi.configured}
           cookieInfo={pipi.cookieInfo}

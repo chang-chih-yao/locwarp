@@ -12,9 +12,11 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   INITIAL_MOVE_MODE,
+  INITIAL_PIPI_FLOWER_FILTER,
   INITIAL_PIPI_KINDS,
   MODE_SPEED_KMH,
   resolveMoveMode,
+  resolvePipiFlowerFilter,
   resolvePipiKinds,
 } from '../../frontend/src/defaults.ts';
 
@@ -54,6 +56,32 @@ test('存下來的點位種類缺少或不是布林值的項目用初始值', ()
 test('壞掉或不是物件的點位種類設定整份用初始值', () => {
   for (const bad of ['not json', '"mushroom"', '42', 'null', '[true,true,true]']) {
     assert.deepEqual(resolvePipiKinds(bad), { ...INITIAL_PIPI_KINDS }, bad);
+  }
+});
+
+test('沒存過花的子篩選時顯示全部的花：不限彩帶、顯示普花', () => {
+  assert.deepEqual(resolvePipiFlowerFilter(null), { ribbonOnly: false, showCommon: true });
+});
+
+test('存過的花的子篩選原樣保留，四種勾法都是', () => {
+  for (const ribbonOnly of [false, true]) {
+    for (const showCommon of [false, true]) {
+      const saved = { ribbonOnly, showCommon };
+      assert.deepEqual(resolvePipiFlowerFilter(JSON.stringify(saved)), saved);
+    }
+  }
+});
+
+test('存下來的花的子篩選缺少或不是布林值的欄位用初始值，另一欄照存的', () => {
+  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":true}'), { ribbonOnly: true, showCommon: true });
+  assert.deepEqual(resolvePipiFlowerFilter('{"showCommon":false}'), { ribbonOnly: false, showCommon: false });
+  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":"yes","showCommon":false}'), { ribbonOnly: false, showCommon: false });
+  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":true,"showCommon":0}'), { ribbonOnly: true, showCommon: true });
+});
+
+test('壞掉或不是物件的花的子篩選設定整份用初始值', () => {
+  for (const bad of ['not json', '"ribbonOnly"', '42', 'null', '[true,false]']) {
+    assert.deepEqual(resolvePipiFlowerFilter(bad), { ...INITIAL_PIPI_FLOWER_FILTER }, bad);
   }
 });
 

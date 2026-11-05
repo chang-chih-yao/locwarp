@@ -3,6 +3,7 @@ import { describePipiError } from '../services/api';
 import type { PipiCookieResult, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
 import { PIPI_MIN_ZOOM } from '../pipiFetchPlanner';
+import { PIPI_MAX_MARKERS } from '../pipiMarkerSelection';
 import type { PipiKinds, PipiLayerStatus } from '../hooks/usePipiMushroomLayer';
 
 interface Props {
@@ -36,6 +37,10 @@ const FLOWER_FILTER_ORDER: { key: keyof PipiFlowerFilter; labelKey: string }[] =
 ];
 const MARKER_SIZE_ORDER: PipiMarkerSize[] = ['small', 'medium', 'large'];
 const PANEL_ACCENT = '#ff9f43';
+const WARN_BOX: React.CSSProperties = {
+  marginTop: 6, padding: '5px 8px', background: 'rgba(255,193,7,0.12)',
+  border: '1px solid rgba(255,193,7,0.45)', borderRadius: 4, fontSize: 11, color: '#ffd54f', lineHeight: 1.4,
+};
 
 function clock(ms: number): string {
   const d = new Date(ms);
@@ -204,10 +209,10 @@ const PipiMushroomPanel: React.FC<Props> = ({
         )}
       </div>
       {enabled && status.truncated && status.phase === 'ok' && (
-        <div style={{
-          marginTop: 6, padding: '5px 8px', background: 'rgba(255,193,7,0.12)',
-          border: '1px solid rgba(255,193,7,0.45)', borderRadius: 4, fontSize: 11, color: '#ffd54f', lineHeight: 1.4,
-        }}>{t('map.pipi_truncated')}</div>
+        <div style={WARN_BOX}>{t('map.pipi_truncated')}</div>
+      )}
+      {enabled && status.viewCapped && status.phase === 'ok' && (
+        <div style={WARN_BOX}>{t('map.pipi_capped', { count: PIPI_MAX_MARKERS })}</div>
       )}
 
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '10px 0 8px' }} />

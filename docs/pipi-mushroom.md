@@ -7,7 +7,7 @@ Google login on that site, so LocWarp proxies it with the user's browser
 cookie. A Chrome extension keeps that cookie in sync.
 
 Contracts for editing these files: `.claude/rules/pipi-mushroom.md`.
-Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/test_pipi_fetch_planner.ts`.
+Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/test_pipi_fetch_planner.ts`, `tests/frontend/test_pipi_marker_selection.ts`.
 
 ## Pieces
 
@@ -18,6 +18,7 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
 | Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties |
 | Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). The layer only acts on its decision |
+| Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`: 普花 / 彩帶花 checks, the 花的子篩選, and the popup's 彩帶期 countdown (see Flowers below) |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
@@ -150,10 +151,22 @@ are in `frontend/src/defaults.ts`.
     are kept. Zooming back in redraws them after the debounce, and the same
     reuse rules decide whether to fetch.
   - 60 s refresh.
-  - At most 1500 markers. This is LocWarp's own rendering cap, not a throttle
-    on the site, so tighten-only does not apply to it. Open bug: it cuts in
-    response order without telling the panel
-    (`.scratch/pipi-max-markers/issues/01-marker-cap-silent-truncation.md`).
+  - At most 1500 markers (`PIPI_MAX_MARKERS`). This is LocWarp's own
+    rendering cap, not a throttle on the site, so tighten-only does not apply
+    to it. Past the cap:
+    - It keeps the points nearest the view centre by 畫面框距離
+      `max(|dx| / (W/2), |dy| / (H/2))`, which picks a rectangle shaped like
+      the view, so every point inside the view comes before any outside it.
+      Items filtered out (kind off, ended, 花的子篩選) never use up the cap.
+    - The point whose popup is open is drawn as one extra if it missed the
+      cut, so up to 1501 can be shown.
+    - When a pan or zoom settles, the same `load` that asks the planner
+      reselects for the new centre (on any decision but `hide`). It only adds
+      and removes the markers that changed, so an open popup stays open.
+      Nothing is requested for it.
+    - The panel shows a hint (`map.pipi_capped`) only when points inside the
+      view are left out (畫面內缺點), not merely when the padded fetch has
+      more than 1500.
   - Stops on `pipi_no_cookie`, `pipi_login_required` and `pipi_cookie_invalid`.
   - Backs off by `retry_after` on 429.
 - **Backend:**

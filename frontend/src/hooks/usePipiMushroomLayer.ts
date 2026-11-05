@@ -12,6 +12,7 @@ import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
 import { fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 import { PIPI_FRESH_MS, createPipiFetchPlanner } from '../pipiFetchPlanner';
 import type { PipiBox } from '../pipiFetchPlanner';
+import { PIPI_MAX_MARKERS, selectPipiMarkers } from '../pipiMarkerSelection';
 
 // Pipi Mushroom 蘑菇地圖 overlay: fetches player-reported mushrooms / flowers
 // for the viewport from the backend proxy and paints them as Leaflet markers.
@@ -34,7 +35,6 @@ const PRUNE_MS = 30_000;
 // extension (extensions/pipi-cookie-sync) is picked up without a click.
 const STATUS_POLL_MS = 15_000;
 const BBOX_PAD = 0.25;
-const MAX_MARKERS = 1500;
 const STOP_CODES = new Set(['pipi_no_cookie', 'pipi_login_required', 'pipi_cookie_invalid']);
 const ASSET_PREFIX = 'https://pipimushroom.com/';
 
@@ -53,6 +53,9 @@ export interface PipiLayerStatus {
   phase: PipiPhase;
   shown: number;
   truncated: boolean;
+  // 畫面內缺點 (GLOSSARY.md). Set by every rebuild and reselect, not by prune;
+  // false wherever `shown` goes to 0.
+  viewCapped: boolean;
   updatedAt: number | null;
   error: string | null;
   zoom: number;
@@ -158,7 +161,7 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
   // the (wrapped, -180..180) results onto the world copy currently on screen.
   const [data, setData] = useState<{ res: PipiItemsResponse; offset: number; lngShift: number } | null>(null);
   const [status, setStatus] = useState<PipiLayerStatus>({
-    phase: 'off', shown: 0, truncated: false, updatedAt: null, error: null, zoom: 0,
+    phase: 'off', shown: 0, truncated: false, viewCapped: false, updatedAt: null, error: null, zoom: 0,
   });
   const [reloadToken, setReloadToken] = useState(0);
   // Markers taken off the map below the threshold while `data` stays. Kept
@@ -180,6 +183,9 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
   // Id of the item whose popup is open, so a data refresh can reopen it.
   const openIdRef = useRef<string | null>(null);
   const reopenIdRef = useRef<string | null>(null);
+  // Re-picks the drawn markers for the current view, set by the marker
+  // effect and null whenever no layer is up; the fetch loop calls it.
+  const reselectRef = useRef<(() => void) | null>(null);
 
   const [cookieInfo, setCookieInfo] = useState<Pick<PipiStatusResponse, 'source' | 'updated_at'>>({
     source: null, updated_at: null,
@@ -215,13 +221,13 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
     if (!map || !enabled) {
       setData(null);
       setMarkersHidden(false);
-      setStatus((s) => ({ ...s, phase: 'off', shown: 0, truncated: false, error: null }));
+      setStatus((s) => ({ ...s, phase: 'off', shown: 0, truncated: false, viewCapped: false, error: null }));
       return;
     }
     if (configured === false) {
       setData(null);
       setMarkersHidden(false);
-      setStatus((s) => ({ ...s, phase: 'no_cookie', shown: 0, truncated: false, error: null }));
+      setStatus((s) => ({ ...s, phase: 'no_cookie', shown: 0, truncated: false, viewCapped: false, error: null }));
       return;
     }
     let disposed = false;
@@ -253,9 +259,14 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
         // every zoom back in refetch, and no automated test would catch it.
         ctrl?.abort();
         setMarkersHidden(true);
-        if (!stopped) setStatus((s) => ({ ...s, phase: 'zoom', shown: 0, truncated: false, error: null, zoom }));
+        if (!stopped) setStatus((s) => ({ ...s, phase: 'zoom', shown: 0, truncated: false, viewCapped: false, error: null, zoom }));
         return;
       }
+      // Reselected here rather than on a moveend of its own: two debounces
+      // fire in no fixed order, so that one could redraw after a zoom below
+      // the threshold before this hides. Every other decision reselects, even
+      // a stop, a back-off or a refetch (then the new data rebuilds again).
+      reselectRef.current?.();
       const wasHidden = markersHiddenRef.current;
       setMarkersHidden(false);
       if (stopped) return;
@@ -333,31 +344,53 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
     // `markersHidden` has to come after the reopen id is cleared: a popup
     // closed by hiding must not reopen when the markers come back.
     if (!map || !enabled || !data || markersHidden) {
-      setStatus((s) => (s.shown ? { ...s, shown: 0 } : s));
+      setStatus((s) => (s.shown || s.viewCapped ? { ...s, shown: 0, viewCapped: false } : s));
       return;
     }
     const { res, offset, lngShift } = data;
-    const now = Date.now() + offset;
     const px = MARKER_PX[markerSize];
     const pxStyle = `--pipi-box:${px.box}px;--pipi-ring:${px.ring}px;--pipi-dot:${px.dot}px`;
     const half = px.box / 2;
     const layer = L.layerGroup();
     const icons = new Map<string, L.DivIcon>();
-    const entries: Array<{ marker: L.Marker; end?: number }> = [];
-    let reopen: L.Marker | null = null;
+    // The markers on the layer, by item id: prune and reselect both remove
+    // from it, so neither touches a marker the other already took off.
+    const drawn = new Map<string, { marker: L.Marker; end?: number }>();
+    // Whether the last selection hit the 點位上限; reselect does nothing otherwise.
+    let capped = false;
 
-    // Only markers actually drawn count toward MAX_MARKERS, so items dropped
-    // by the 花的子篩選 below don't use up the cap.
-    for (const it of res.items) {
-      if (entries.length >= MAX_MARKERS) break;
+    // Picks against the view and the server time of this moment, not of the
+    // rebuild: an older `now` would bring back markers prune already dropped.
+    const select = (keepId: string | null) => {
+      const now = Date.now() + offset;
+      const zoom = map.getZoom();
+      const size = map.getSize();
+      const picked = selectPipiMarkers({
+        items: res.items,
+        shouldShow: (it) => {
+          const kind = kindOf(it);
+          if (!kinds[kind]) return false;
+          const end = endMs(it, kind);
+          if (end && end <= now) return false;
+          // No `kind === 'flower'` guard here: letting mushrooms / smoke
+          // through is the module's job, so its tests are what lock it in.
+          return passesFlowerFilter(it, flowerFilter, now);
+        },
+        // Same lngShift as the marker itself, so the distance matches what is drawn.
+        point: (it) => map.project([it.lat, it.lng + lngShift], zoom),
+        center: map.project(map.getCenter(), zoom),
+        width: size.x,
+        height: size.y,
+        cap: PIPI_MAX_MARKERS,
+        keepId,
+      });
+      capped = picked.capped;
+      return { picked, now };
+    };
+
+    const addMarker = (it: PipiItem, now: number) => {
       const kind = kindOf(it);
-      if (!kinds[kind]) continue;
-      const end = endMs(it, kind);
-      if (end && end <= now) continue;
-      // No `kind === 'flower'` guard here: letting mushrooms / smoke through
-      // is the module's job, so its tests are what lock it in.
-      if (!passesFlowerFilter(it, flowerFilter, now)) continue;
-      // Decided per rebuild only; prune never re-checks it.
+      // Decided when the marker is built (rebuild or reselect); prune never re-checks it.
       const ribbon = ribbonEndMs(it, now) !== null;
       const img = safeImage(it);
       const iconKey = `${kind}|${ribbon ? 'ribbon' : ''}|${img ?? ''}`;
@@ -395,29 +428,55 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
       });
       marker.on('popupclose', () => { if (openIdRef.current === it.id) openIdRef.current = null; });
       layer.addLayer(marker);
-      entries.push({ marker, end });
-      if (reopenId && it.id === reopenId) reopen = marker;
-    }
+      drawn.set(it.id, { marker, end: endMs(it, kind) });
+    };
+
+    // Rebuild: the popup id comes from reopenIdRef, because the previous
+    // cleanup's layer.remove() fired popupclose and nulled openIdRef.
+    const rebuild = select(reopenId);
+    for (const it of rebuild.picked.items) addMarker(it, rebuild.now);
     layer.addTo(map);
-    setStatus((s) => ({ ...s, shown: entries.length }));
-    if (reopen) (reopen as L.Marker).openPopup();
+    const shown = drawn.size;
+    setStatus((s) => ({ ...s, shown, viewCapped: rebuild.picked.viewCapped }));
+    if (reopenId) drawn.get(reopenId)?.marker.openPopup();
+
+    // Same data, view moved: change only the markers that left or joined the
+    // pick. The open popup's marker always stays, so its popup isn't closed
+    // and reopened (Leaflet's autoPan would pull the map back).
+    reselectRef.current = () => {
+      if (!capped) return;
+      const { picked, now } = select(openIdRef.current);
+      const keep = new Set(picked.items.map((it) => it.id));
+      for (const [id, e] of drawn) {
+        if (keep.has(id)) continue;
+        layer.removeLayer(e.marker);
+        drawn.delete(id);
+      }
+      for (const it of picked.items) if (!drawn.has(it.id)) addMarker(it, now);
+      const shown = drawn.size;
+      setStatus((s) => ({ ...s, shown, viewCapped: picked.viewCapped }));
+    };
 
     // Drop markers as their timers run out, without rebuilding the layer
-    // (a rebuild would close whatever popup the user has open).
+    // (a rebuild would close whatever popup the user has open). Nothing is
+    // re-picked here, so the count may sit under the cap until the next
+    // reselect or rebuild.
     const prune = window.setInterval(() => {
       const n = Date.now() + offset;
-      let removed = 0;
-      for (const e of entries) {
-        if (e.end && e.end <= n && layer.hasLayer(e.marker)) {
-          layer.removeLayer(e.marker);
-          removed++;
-        }
+      let removed = false;
+      for (const [id, e] of drawn) {
+        if (!e.end || e.end > n) continue;
+        layer.removeLayer(e.marker);
+        drawn.delete(id);
+        removed = true;
       }
-      if (removed) setStatus((s) => ({ ...s, shown: Math.max(0, s.shown - removed) }));
+      const shown = drawn.size;
+      if (removed) setStatus((s) => ({ ...s, shown }));
     }, PRUNE_MS);
 
     return () => {
       window.clearInterval(prune);
+      reselectRef.current = null;
       reopenIdRef.current = openIdRef.current;
       layer.remove();
     };

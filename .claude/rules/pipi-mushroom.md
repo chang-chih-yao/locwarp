@@ -6,10 +6,12 @@ paths:
   - "frontend/src/components/PipiMushroomPanel.tsx"
   - "frontend/src/pipiFlowers.ts"
   - "frontend/src/pipiFetchPlanner.ts"
+  - "frontend/src/pipiMarkerSelection.ts"
   - "extensions/pipi-cookie-sync/**"
   - "tests/pipi/**"
   - "tests/frontend/test_pipi_flowers.ts"
   - "tests/frontend/test_pipi_fetch_planner.ts"
+  - "tests/frontend/test_pipi_marker_selection.ts"
 ---
 
 # Pipi Mushroom 蘑菇地圖 layer + cookie-sync extension

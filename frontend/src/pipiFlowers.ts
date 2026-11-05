@@ -1,5 +1,6 @@
 // 蘑菇地圖 flower rules (see GLOSSARY.md: 花種, 花苞, 普花, 彩帶花): which
-// items are 普花 / 彩帶花, and which ones the 花的子篩選 lets through.
+// items are 普花 / 彩帶花, which ones the 花的子篩選 lets through, and how the
+// popup writes the 彩帶期 countdown.
 //
 // No runtime imports and erasable-syntax-only so `node --test` can load it
 // directly; the type-only imports below are stripped whole by Node.
@@ -48,6 +49,18 @@ export function ribbonEndMs(item: PipiItem, nowMs: number): number | null {
   const ribbonEnd = bloomed + RIBBON_MS;
   if (nowMs < bloomed || nowMs >= wilting || nowMs >= ribbonEnd) return null;
   return Math.min(ribbonEnd, wilting);
+}
+
+/**
+ * 彩帶期 countdown for the popup's ribbon line: m:ss, minutes unpadded,
+ * seconds padded and rounded down. Never shows hours, so the full 彩帶期
+ * (popup opened at the exact bloom ms) reads 60:00.
+ *
+ * @param ms time left in the 彩帶期: `ribbonEndMs(item, now) - now`.
+ */
+export function fmtRibbonCountdown(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 /** Whether the item is 普花 (including its 花苞). */

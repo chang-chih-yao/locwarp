@@ -7,7 +7,7 @@
 // which upstream format change they guard against.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isCommonFlower, passesFlowerFilter, ribbonEndMs } from '../../frontend/src/pipiFlowers.ts';
+import { fmtRibbonCountdown, isCommonFlower, passesFlowerFilter, ribbonEndMs } from '../../frontend/src/pipiFlowers.ts';
 import type { PipiFlowerFilter } from '../../frontend/src/defaults.ts';
 import type { PipiItem } from '../../frontend/src/services/api.ts';
 
@@ -132,6 +132,17 @@ test('原站若把時間欄位改成字串（後端原樣轉送不檢查型別�
   const asString = (ms: number) => String(ms) as unknown as number;
   assert.equal(ribbonEndMs({ ...inWindow, bloomedMs: asString(inWindow.bloomedMs!) }, NOW), null);
   assert.equal(ribbonEndMs({ ...inWindow, wiltingMs: asString(inWindow.wiltingMs!) }, NOW), null);
+});
+
+test('剛好在盛開那一毫秒打開 popup，彩帶行顯示 60:00 而不是 1:00:00', () => {
+  const justBloomed = flower('f:White:Geranium', '白色天竺葵', NOW);
+  assert.equal(fmtRibbonCountdown(ribbonEndMs(justBloomed, NOW)! - NOW), '60:00');
+});
+
+test('彩帶行的倒數是分不補零、秒補零，不足一秒捨去，跟剩餘時間行一致', () => {
+  assert.equal(fmtRibbonCountdown(5 * MIN + 3000), '5:03');
+  assert.equal(fmtRibbonCountdown(5 * MIN + 3999), '5:03');
+  assert.equal(fmtRibbonCountdown(59 * MIN + 59_000), '59:59');
 });
 
 // One of each case the 花的子篩選 must tell apart, keyed by a readable name.

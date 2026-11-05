@@ -9,7 +9,7 @@ import {
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter } from '../defaults';
-import { passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
+import { fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 
 // Pipi Mushroom 蘑菇地圖 overlay: fetches player-reported mushrooms / flowers
 // for the viewport from the backend proxy and paints them as Leaflet markers.
@@ -107,7 +107,7 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
   // Re-checked at open time, not taken from the layer build: the 彩帶期 may
   // have ended since, and then the line is left out instead of going negative.
   const ribbonEnd = ribbonEndMs(it, now);
-  const ribbonLine = ribbonEnd === null ? '' : t('map.pipi_ribbon_ends_in', { time: fmtDuration(ribbonEnd - now) });
+  const ribbonLine = ribbonEnd === null ? '' : t('map.pipi_ribbon_ends_in', { time: fmtRibbonCountdown(ribbonEnd - now) });
   let timeLine = '';
   if (end && end > now) {
     timeLine = t('map.pipi_remaining', { time: fmtDuration(end - now) });

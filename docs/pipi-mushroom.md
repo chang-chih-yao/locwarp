@@ -17,7 +17,7 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`.
 | API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items` |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
 | Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling |
-| Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`: 普花 / 彩帶花 checks and the 花的子篩選 (see Flowers below) |
+| Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`: 普花 / 彩帶花 checks, the 花的子篩選, and the popup's 彩帶期 countdown (see Flowers below) |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), cookie paste/clear, status |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
 | Extension | `extensions/pipi-cookie-sync/` | pushes the browser's Cookie header to `127.0.0.1:8777` (user guide: its `README.md`) |
@@ -102,6 +102,10 @@ site's own check is the same idea: bloomed, within 60 min of `bloomedMs`,
 not wilted. `now` is server time (local clock + the `now_ms` offset), like
 the layer's expiry checks. The site uses the local clock, so the two can
 disagree slightly when the local clock is off.
+
+The popup re-runs `ribbonEndMs` when it opens and, for a 彩帶花, adds a
+countdown line. `fmtRibbonCountdown` always writes it as `m:ss`, never with
+hours, so a popup opened at the exact bloom ms reads `60:00`.
 
 **花的子篩選** (`passesFlowerFilter`): two panel checkboxes, saved as
 `locwarp.pipi_flower_filter`; initial values and `resolvePipiFlowerFilter`

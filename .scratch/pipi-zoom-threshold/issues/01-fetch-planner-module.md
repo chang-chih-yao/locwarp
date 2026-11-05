@@ -1,6 +1,6 @@
 # 01 抽出抓取判斷模組（行為不變）
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 
 Spec: `.scratch/pipi-zoom-threshold/spec.md`
@@ -70,3 +70,39 @@ Spec: `.scratch/pipi-zoom-threshold/spec.md`
 - 改門檻（票 02）。
 - `hide` 時保留紀錄和資料、狀態列規則、停止抓取時藏點位（票 03）。
 - 改 debounce、60 秒週期、25% padding、經度換算。
+
+---
+
+2026-11-05：完成，commit `2d1e6ef`。
+
+- 模組 `frontend/src/pipiFetchPlanner.ts`、測試 `tests/frontend/test_pipi_fetch_planner.ts`（12 條，四邊超出各一條）。zoom 照票：門檻以下用 13，門檻以上用 15 起。
+- hook 的 `load` 判斷順序跟原本等價：
+  - 停止抓取或視窗在背景時，在問 planner 之前就 return。
+  - `hide` 在 429 退避檢查之前。
+  - 退避中和 `reuse` 合成同一個 return，原本兩種情況也都是直接 return。
+- Mutation check：下列 14 條改法都有測試變紅，還原後全綠。
+  - zoom 判斷移到沿用判斷之後。
+  - 拿掉 `force` 判斷。
+  - 60 秒比較的 `<` 改成 `<=`。
+  - 四邊各改成不含邊界（等於邊界那條變紅）。
+  - 四邊各自拿掉判斷（該邊超出那條變紅）。
+  - 拿掉截斷條件。
+  - 門檻改成 13。
+  - `record` 不存紀錄。
+- 刻意不會變紅的兩處：
+  - `hide` 時不清紀錄：照票不寫測試，票 03 處理。
+  - 門檻改 15，或 `<` 改 `<=`：zoom 14 沒測，票 02 會補。
+- 測試結果：
+  - 前端 `tests/frontend/*.ts` 48/48 pass、0 skipped。
+  - `npm run build`（含 tsc）通過。
+  - `tests/pipi/` 的 `test_extension.js`、`test_cookie_header.py`、`test_api_cookie.py`、`test_cache_now_ms.py` 都是 exit 0。
+- 人工驗證（dev backend + vite，台北車站 25.0478, 121.5170）：
+  - **限制：** 擴充功能存的 cookie 已經登入失效，後端真的回 401。所以除了第一項，items 回應都是在頁面裡包 `fetch` 回的假資料（台北車站附近 20 朵花），沒有打到原站。請求次數與時間點是在包裝裡記錄的，不是看 DevTools Network。
+  - 登入失效，用真的後端：401 之後平移超出範圍、改 zoom 16，又經過 67 秒（至少一次強制更新），都沒有再發請求。狀態列顯示登入錯誤。
+  - 按「重新整理」：解除停止，重抓 1 次，畫出 20 個點位。
+  - 在範圍內平移：寬或高的 10–20%，平移 3 次，0 次請求。平移 50% 超出範圍：1 次請求。
+  - 停著不動：強制更新在重新整理那次之後 60.013 秒發出，約 70 秒內只發 1 次。
+  - 縮到 13：點位 0 個，狀態列顯示「放大到 Zoom 14 以上才會載入 (目前 13)」，沒有請求。
+  - 放回 14：重抓 1 次（送 zoom=14），點位回來。資料在縮小時清掉了，跟票說的一樣。
+  - 模擬 `pipi_login_required`（假的 401，格式跟後端一樣）：那次請求之後平移 2 次、改 zoom，都沒有再發請求，狀態列顯示登入錯誤。
+- 版本號沒動。

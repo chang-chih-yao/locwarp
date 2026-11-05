@@ -1,6 +1,6 @@
 # 01 蘑菇地圖的點位上限照回傳順序截斷，畫面內的點位可能被丟掉，面板也不提示
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: bug
 
@@ -209,3 +209,73 @@ triage 時已用程式碼確認現象（沒有重打原站 API，數據沿用上
 - 原站用 `preferCanvas` 改成推測：`.scratch/pipi-zoom-threshold/spec.md` 只記了畫面標籤。
 - 「畫面內缺點」加進 `GLOSSARY.md`，brief 改成只另用「畫面框距離」一個說法。
 - 沒採納：拆票。花的子篩選與 zoom-threshold 是一開始就有 spec、規劃好分片的功能；這張是 bug 票，模組單獨合進去沒有作用，hook 那一半 agent 也能做，只有人工驗證需要使用者的 cookie，所以改成分兩個 commit。
+
+---
+
+2026-11-05：完成，commit `995dd45`（模組與測試）、`cd18104`（hook、面板、i18n、文件），照 brief 分兩個 commit、模組在前。
+
+- 新模組 `frontend/src/pipiMarkerSelection.ts`：`selectPipiMarkers` 與 `PIPI_MAX_MARKERS`（仍是 1500，hook 與面板共用）。
+  - 判斷函式、投影座標由 hook 提供。座標用 `map.project` 並加上 `lngShift`；中心、寬高取挑選當下的地圖。
+  - 回傳的點位不保證順序。Leaflet 的 marker 疊放順序依 y 座標決定，所以順序沒有作用（見下方 code review）。
+- hook：
+  - 圖層內的 marker 改用 id 對應的 Map 管理，整層重建、重挑、prune 都作用在它上面。
+  - 重挑由 `load` 在 hide 判斷之後、停止抓取 / reuse / 429 / 重抓之前呼叫，只有上一次挑選有上限截斷時才真的做。重挑函式放在 `reselectRef`，marker effect 的 cleanup 清成 null。
+- 測試：`tests/frontend/test_pipi_marker_selection.ts` 14 條，涵蓋 brief 的 1–7。
+  - 第 6 條另加一條「剛好在畫面邊上的點位算畫面內」。
+  - 每條都比對排序後的整組 id，筆數與重複都比得出來。
+- Mutation check（只改模組，跑完還原，還原後全綠）：
+  - 照輸入順序取前 N 個：第 1 條紅（另有第 5、6 條各一條跟著紅）。
+  - 改直線距離：第 2 條紅（第 6 條兩條跟著紅）。
+  - 拿掉長寬換算、改 `max(|dx|, |dy|)`：第 2 條紅（第 6 條兩條跟著紅）。
+  - 先算名額再套判斷函式：第 3 條紅（第 4 條「不該顯示」、第 5 條跟著紅）。
+  - 忽略必定入選的 id：第 4 條「額外多畫一個」與第 6 條「popup 在畫面外」紅。
+  - 必定入選改回擠掉最遠的：同上兩條紅。
+  - 不檢查是否已入選、一律額外加：第 4 條「本來就入選」紅（id 重複）。
+  - `>` 改 `>=`：第 5 條紅。剛好等於上限時會讀 `ranked[cap]` 而丟 TypeError，所以是丟例外而紅，不是斷言失敗。
+  - 畫面內缺點回傳整批截斷：第 6 條「整批超過、畫面內沒缺」與「popup 在畫面外」紅。
+  - 等距時反向（排序前先 reverse）：第 7 條紅。
+- 測試結果：
+  - 前端 `tests/frontend/*.ts`：66/66 pass，0 skipped。兩個 commit 各跑一次；第一個 commit 是把第二個 commit 的改動 stash 掉後單獨跑的。
+  - `npm run build`（含 tsc）：兩個 commit 都通過。
+  - `tests/pipi/` 五支都是 exit 0：`test_extension.js`、`test_cookie_header.py`、`test_api_cookie.py`、`test_cache_now_ms.py`、`test_items_min_zoom.py`。`check_live_anonymous.py` 照規則沒跑。
+- Code review（Standards、Spec 兩軸）：
+  - Standards 硬違規一條（採納）：docstring 寫「回傳照輸入順序」「`point` 只在超過上限時呼叫」，但沒有測試鎖住。刪掉這兩個承諾和輸出前的排序，沒有補測試，理由是 marker 的疊放順序依 y 座標決定。這個修正 amend 進第一個 commit（當時還沒 push），以維持兩個 commit 的分法。
+  - Standards 採納的判斷題：hook 的 `first` / `firstShown` 改成 `rebuild` / `shown`，測試的 `three` 改成 `atCap`。
+  - Standards 沒採納的判斷題：
+    - 「畫面框距離」不收進 GLOSSARY：triage 時刻意留作實作用語。
+    - 三條 setStatus 重複的歸零欄位不抽常數：是既有寫法，超出範圍。
+    - prune 與重挑的移除迴圈不抽 helper：只有兩行，條件不同。
+    - `center` / `width` / `height` 不包成 view：照 brief 列的輸入，只有一個呼叫端。
+  - Spec：沒有缺漏，也沒有做錯的地方。提到兩件事，記在下面。
+- 假設與邊界情況：
+  - **id 不重複**：`drawn` 用 id 當 key，原站若回傳重複 id，先建的 marker 會變成 prune 和重挑都管不到的孤兒，直到下一次整層重建；狀態列也會少算。後端沒有去重，原站的 id 是否唯一沒有正式驗證過。人工驗證的三組樣本中，狀態列筆數都等於圖層上的 marker 數（1500、300、518），畫出的點位 id 沒有重複。
+  - **畫面內剛好 N+1 個、popup 的點位正好是第 N+1 個**：這時畫面內其實全畫出來了，模組仍回報畫面內缺點。這是照 brief「額外多畫的這一個不影響上限截斷與畫面內缺點的判定」做的，跟 GLOSSARY 的定義「仍有該顯示的點位沒有畫出來」在這個情況不一致。
+- 人工驗證（dev backend + vite，台北車站 25.0478, 121.5170，zoom 15）：
+  - 環境：
+    - Chrome 視窗是最大化的，調不了大小，所以在頁面裡把地圖容器的 CSS 設成 1400×850，再 `invalidateSize()`。
+    - cookie 是擴充功能推來的登入狀態，用的是原站真資料。
+    - 請求次數用頁面內包一層 `fetch` 的紀錄判斷。每一步都確認期間沒有 60 秒強制刷新插進來，需要時先等一次刷新再開始。
+    - 開始前面板設定是「只開花、只顯示彩帶、不顯示普花」，驗證時改成三種全開、花不篩，驗完已改回原值（kinds、花的子篩選、標記大小、語言都跟原本一樣）。
+  - 點位上限 1500、三種全開：
+    - 原站回 2201 筆，沒有原站截斷；該顯示的 2169 筆，所以有上限截斷，畫出 1500 個。
+    - 畫面內（畫面框距離 ≤ 1）該顯示的 1018 個全部畫出，**沒有**提示。畫出的點位中最大的畫面框距離 1.2384，沒畫出的最小 1.2385。
+    - 實際是 brief 說的「不到上限」那一種，只是估計的九百多個實際是 1018 個。
+    - 用 DOM 位置數出畫面內的 `.pipi-pin` 是 1020 個，多的 2 個是剛好在畫面邊上、被 Leaflet 四捨五入到整數像素的 marker。
+  - 點位上限暫時改成 300（沒有 commit，改回後確認模組跟 commit 一樣）、三種全開：
+    - 提示出現：「這個畫面的點位超過 300 個, 只畫出靠近中心的部分, 放大或少開幾種點位可看完整資料」。
+    - 重挑：等到一次強制刷新後，給中央的 marker 加記號，平移 280 px（畫面寬的 20%）後停下。
+      - 沒有新的 items 請求，帶記號的 marker 是同一個 DOM 元素。
+      - 差異更新：保留 187、移除 113、加入 113，仍是 300 個。
+      - 依新中心算，畫出的最大畫面框距離 0.5346，沒畫出的最小 0.5352。
+    - popup：先平移回原中心，打開已畫出範圍左緣 marker（容器 x = 338）的 popup，再往右平移 330 px（約 23.6%）。
+      - 停下後 popup 仍開著，還是同一個 marker；它的畫面框距離是 0.9886，在新挑出的 300 個（最大 0.5359）之外。
+      - 地圖中心停在平移目標上（差 0 px），1.2 秒後也沒被拉回去。
+      - 狀態列「顯示 301 筆」，沒有新的 items 請求。
+    - 關掉 popup 後放大到 zoom 16：畫面內該顯示的只剩 264 個，提示馬上消失，沒有新的 items 請求（刷新後 7.8 秒內做完）。
+    - 另外看到：從 zoom 16 縮回 15（planner 判 reuse，沒送請求）時，重挑後提示又出現，帶記號的 marker 還在。
+    - 英文介面的提示：「More than 300 points in view, showing those nearest the center; zoom in or turn off some kinds for the full set」，正確。
+  - 點位上限 1500、只開蘑菇（沒有上限截斷）：
+    - 畫出 518 個，沒有提示。
+    - 加記號後平移 280 px 停下：marker 集合完全沒變，帶記號的 marker 還在，沒有新的 items 請求。
+  - **沒有重做的**：人工驗證是在 code review 修正之前做的。修正只刪掉模組輸出前的排序和兩處改名，修正後只重跑了自動化測試、mutation check 和 build，沒有再開 app 驗一次。
+- 02 號票是 `Blocked by: 01`，這張 resolved 後可以 triage 了。

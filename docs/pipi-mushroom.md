@@ -151,22 +151,26 @@ are in `frontend/src/defaults.ts`.
     are kept. Zooming back in redraws them after the debounce, and the same
     reuse rules decide whether to fetch.
   - 60 s refresh.
-  - At most 1500 markers (`PIPI_MAX_MARKERS`). This is LocWarp's own
+  - At most 750 markers (`PIPI_MAX_MARKERS`). This is LocWarp's own
     rendering cap, not a throttle on the site, so tighten-only does not apply
-    to it. Past the cap:
+    to it. On the user's machine (2026-11-05), 750 kept every full layer
+    rebuild measured (data refresh, kind toggle, 標記大小 change) within
+    100 ms; 1500 went past it (measurements in
+    `.scratch/pipi-max-markers/issues/02-marker-cap-size-and-rendering.md`).
+    Past the cap:
     - It keeps the points nearest the view centre by 畫面框距離
       `max(|dx| / (W/2), |dy| / (H/2))`, which picks a rectangle shaped like
       the view, so every point inside the view comes before any outside it.
       Items filtered out (kind off, ended, 花的子篩選) never use up the cap.
     - The point whose popup is open is drawn as one extra if it missed the
-      cut, so up to 1501 can be shown.
+      cut, so up to 751 can be shown.
     - When a pan or zoom settles, the same `load` that asks the planner
       reselects for the new centre (on any decision but `hide`). It only adds
       and removes the markers that changed, so an open popup stays open.
       Nothing is requested for it.
     - The panel shows a hint (`map.pipi_capped`) only when points inside the
       view are left out (畫面內缺點), not merely when the padded fetch has
-      more than 1500.
+      more than 750.
   - Stops on `pipi_no_cookie`, `pipi_login_required` and `pipi_cookie_invalid`.
   - Backs off by `retry_after` on 429.
 - **Backend:**

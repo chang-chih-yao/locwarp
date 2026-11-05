@@ -8,7 +8,13 @@
 
 // LocWarp's own rendering cap (one DivIcon DOM element per marker), not a
 // throttle on the site. Shared by the layer and the panel's hint.
-export const PIPI_MAX_MARKERS = 1500;
+// 750: on the user's machine (2026-11-05) every full layer rebuild at this
+// cap finished within 100 ms, main-thread style / layout / paint included.
+// A 標記大小 change took about 0.04 ms per marker from the click to the new
+// markers in the DOM; the slowest rebuild was a 60 s refresh at 92 ms (an
+// upper bound: no frame went over 50 ms). 1500 took up to 112 ms.
+// Measurements: .scratch/pipi-max-markers/issues/02-marker-cap-size-and-rendering.md
+export const PIPI_MAX_MARKERS = 750;
 
 export interface PipiPixel {
   x: number;

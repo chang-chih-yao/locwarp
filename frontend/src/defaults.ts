@@ -38,39 +38,32 @@ export function resolveMoveMode(stored: string | null): MoveModeKey {
 }
 
 /**
- * Stored `locwarp.pipi_kinds` JSON → point-kind filter.
+ * Stored JSON object of boolean switches → a complete set of switches.
  *
  * @param storedJson raw localStorage value, or null when nothing was saved.
- * @returns a complete filter. Each kind keeps its saved boolean; a kind that
- *   is missing or not a boolean (or the whole value, when it isn't a JSON
- *   object) takes its INITIAL_PIPI_KINDS value.
+ * @param initial the 初始值 of every switch; its keys are the ones returned.
+ * @returns a new object. Each key keeps its saved boolean; a key that is
+ *   missing or not a boolean (or every key, when the value isn't a JSON
+ *   object) takes its `initial` value.
  */
-export function resolvePipiKinds(storedJson: string | null): Record<PipiKindKey, boolean> {
+function resolveSwitches<K extends string>(storedJson: string | null, initial: { readonly [P in K]: boolean }): Record<K, boolean> {
   let raw: unknown = null;
   try { raw = JSON.parse(storedJson ?? 'null'); } catch { /* malformed → initial values */ }
-  const saved = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<PipiKindKey, unknown>>;
-  const pick = (k: PipiKindKey): boolean => {
+  const saved = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<K, unknown>>;
+  const out = {} as Record<K, boolean>;
+  for (const k of Object.keys(initial) as K[]) {
     const v = saved[k];
-    return typeof v === 'boolean' ? v : INITIAL_PIPI_KINDS[k];
-  };
-  return { mushroom: pick('mushroom'), flower: pick('flower'), smoke: pick('smoke') };
+    out[k] = typeof v === 'boolean' ? v : initial[k];
+  }
+  return out;
 }
 
-/**
- * Stored `locwarp.pipi_flower_filter` JSON → 花的子篩選.
- *
- * @param storedJson raw localStorage value, or null when nothing was saved.
- * @returns a complete filter. Each field keeps its saved boolean; a field that
- *   is missing or not a boolean (or the whole value, when it isn't a JSON
- *   object) takes its INITIAL_PIPI_FLOWER_FILTER value.
- */
+/** Stored `locwarp.pipi_kinds` JSON → point-kind filter, as {@link resolveSwitches} with INITIAL_PIPI_KINDS. */
+export function resolvePipiKinds(storedJson: string | null): Record<PipiKindKey, boolean> {
+  return resolveSwitches(storedJson, INITIAL_PIPI_KINDS);
+}
+
+/** Stored `locwarp.pipi_flower_filter` JSON → 花的子篩選, as {@link resolveSwitches} with INITIAL_PIPI_FLOWER_FILTER. */
 export function resolvePipiFlowerFilter(storedJson: string | null): PipiFlowerFilter {
-  let raw: unknown = null;
-  try { raw = JSON.parse(storedJson ?? 'null'); } catch { /* malformed → initial values */ }
-  const saved = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof PipiFlowerFilter, unknown>>;
-  const pick = (k: keyof PipiFlowerFilter): boolean => {
-    const v = saved[k];
-    return typeof v === 'boolean' ? v : INITIAL_PIPI_FLOWER_FILTER[k];
-  };
-  return { ribbonOnly: pick('ribbonOnly'), showCommon: pick('showCommon') };
+  return resolveSwitches(storedJson, INITIAL_PIPI_FLOWER_FILTER);
 }

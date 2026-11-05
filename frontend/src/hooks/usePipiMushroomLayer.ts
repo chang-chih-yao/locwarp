@@ -8,6 +8,8 @@ import {
   pipiStatus,
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
+import type { PipiFlowerFilter } from '../defaults';
+import { passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 
 // Pipi Mushroom 蘑菇地圖 overlay: fetches player-reported mushrooms / flowers
 // for the viewport from the backend proxy and paints them as Leaflet markers.
@@ -49,6 +51,7 @@ interface Options {
   mapRef: React.MutableRefObject<L.Map | null>;
   enabled: boolean;
   kinds: PipiKinds;
+  flowerFilter: PipiFlowerFilter;
   onTeleport: (lat: number, lng: number) => void;
   onNavigate: (lat: number, lng: number) => void;
   t: TFn;
@@ -101,6 +104,10 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
   const img = safeImage(it);
   const end = endMs(it, kind);
   const now = Date.now() + offset;
+  // Re-checked at open time, not taken from the layer build: the 彩帶期 may
+  // have ended since, and then the line is left out instead of going negative.
+  const ribbonEnd = ribbonEndMs(it, now);
+  const ribbonLine = ribbonEnd === null ? '' : t('map.pipi_ribbon_ends_in', { time: fmtDuration(ribbonEnd - now) });
   let timeLine = '';
   if (end && end > now) {
     timeLine = t('map.pipi_remaining', { time: fmtDuration(end - now) });
@@ -115,6 +122,7 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
         ${it.title ? `<div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px;">${escapeHtml(it.title)}</div>` : ''}
       </div>
     </div>
+    ${ribbonLine ? `<div style="font-size:11px;color:var(--accent-pink);margin-bottom:2px;">${escapeHtml(ribbonLine)}</div>` : ''}
     ${timeLine ? `<div style="font-size:11px;color:var(--accent-yellow);margin-bottom:4px;">${escapeHtml(timeLine)}</div>` : ''}
     <div class="map-popup-coords">${it.lat.toFixed(6)}, ${it.lng.toFixed(6)}</div>
     <div class="map-popup-actions">
@@ -124,7 +132,7 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
   </div>`;
 }
 
-export function usePipiMushroomLayer({ mapRef, enabled, kinds, onTeleport, onNavigate, t }: Options) {
+export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, onTeleport, onNavigate, t }: Options) {
   // null = unknown (backend not reachable yet); we still try to load.
   const [configured, setConfigured] = useState<boolean | null>(null);
   // offset: server clock - local clock. lngShift: multiple of 360 that moves
@@ -277,19 +285,25 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, onTeleport, onNav
     const entries: Array<{ marker: L.Marker; end?: number }> = [];
     let reopen: L.Marker | null = null;
 
+    // Only markers actually drawn count toward MAX_MARKERS, so items dropped
+    // by the 花的子篩選 below don't use up the cap.
     for (const it of res.items) {
       if (entries.length >= MAX_MARKERS) break;
       const kind = kindOf(it);
       if (!kinds[kind]) continue;
       const end = endMs(it, kind);
       if (end && end <= now) continue;
+      // Every kind goes through it; mushrooms / smoke always pass.
+      if (!passesFlowerFilter(it, flowerFilter, now)) continue;
+      // Decided per rebuild only; prune never re-checks it.
+      const ribbon = ribbonEndMs(it, now) !== null;
       const img = safeImage(it);
-      const iconKey = `${kind}|${img ?? ''}`;
+      const iconKey = `${kind}|${ribbon ? 'ribbon' : ''}|${img ?? ''}`;
       let icon = icons.get(iconKey);
       if (!icon) {
         icon = L.divIcon({
           className: 'pipi-pin',
-          html: `<div class="pipi-pin-inner pipi-${kind}">${img
+          html: `<div class="pipi-pin-inner pipi-${kind}${ribbon ? ' pipi-ribbon' : ''}">${img
             ? `<img src="${escapeHtml(img)}" alt="" draggable="false" />`
             : '<span class="pipi-pin-dot"></span>'}</div>`,
           iconSize: [30, 30],
@@ -345,7 +359,10 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, onTeleport, onNav
       reopenIdRef.current = openIdRef.current;
       layer.remove();
     };
-  }, [data, enabled, kinds.mushroom, kinds.flower, kinds.smoke, mapRef]);
+  }, [
+    data, enabled, kinds.mushroom, kinds.flower, kinds.smoke,
+    flowerFilter.ribbonOnly, flowerFilter.showCommon, mapRef,
+  ]);
 
   const refresh = useCallback(() => setReloadToken((x) => x + 1), []);
 

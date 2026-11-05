@@ -411,6 +411,7 @@ export const STRINGS = {
   'map.pipi_source': { zh: '資料來源: pipimushroom.com 玩家回報, 僅供參考', en: 'Data: player reports on pipimushroom.com, may be inaccurate' },
   'map.pipi_remaining': { zh: '剩 {time}', en: '{time} left' },
   'map.pipi_wilts_at': { zh: '{time} 凋謝', en: 'wilts at {time}' },
+  'map.pipi_ribbon_ends_in': { zh: '彩帶花 · {time} 後結束', en: 'Ribbon · ends in {time}' },
   'map.follow_disabled_toast': { zh: '跟隨已關閉, 點按鈕可恢復', en: 'Follow disabled. Tap the button to resume.' },
   'map.recent_tooltip': { zh: '最近去過的地點', en: 'Recent destinations' },
   'map.recent_title': { zh: '最近去過', en: 'Recent destinations' },

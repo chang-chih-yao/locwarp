@@ -1465,6 +1465,16 @@ textarea:focus {
 .pipi-pin-inner.pipi-flower { border-color: #ff6fa8; }
 .pipi-pin-inner.pipi-smoke { border-color: #9aa3b2; }
 
+/* 彩帶花: rainbow ring instead of the pink border, same 30px box. Painted as
+   the element's own border-box background behind a transparent border; a
+   pseudo-element ring would be clipped by overflow: hidden. */
+.pipi-pin-inner.pipi-flower.pipi-ribbon {
+  border-color: transparent;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    conic-gradient(#ff4d4d, #ffa13d, #ffe03d, #4cd964, #3db8ff, #8a6cff, #e04dff, #ff4d4d) border-box;
+}
+
 .pipi-pin-dot {
   width: 10px;
   height: 10px;

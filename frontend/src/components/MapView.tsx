@@ -1955,6 +1955,7 @@ const MapView: React.FC<MapViewProps> = ({
     mapRef,
     enabled: pipiEnabled,
     kinds: pipiKinds,
+    flowerFilter: pipiFlowerFilter,
     onTeleport,
     onNavigate,
     t,

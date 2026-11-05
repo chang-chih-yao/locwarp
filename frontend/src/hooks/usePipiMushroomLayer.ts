@@ -21,6 +21,8 @@ import type { PipiBox } from '../pipiFetchPlanner';
 //     ending within 5 minutes; 15 is the first zoom it answers in full)
 //   * one request per settled pan (debounced), skipped while the view is still
 //     inside the last fetched, padded bbox and that data is < 60 s old
+//   * below zoom 15 the markers are only hidden, the data and that bbox kept,
+//     so zooming back in follows the same reuse rule as a pan
 //   * one forced refresh per minute while the window is visible
 //   * stop entirely on missing / expired cookie; back off on 429
 // The hide / reuse / fetch call is pipiFetchPlanner.ts'; this hook acts on it.
@@ -159,6 +161,15 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
     phase: 'off', shown: 0, truncated: false, updatedAt: null, error: null, zoom: 0,
   });
   const [reloadToken, setReloadToken] = useState(0);
+  // Markers taken off the map below the threshold while `data` stays. Kept
+  // outside the fetch effect: a rerun of it can't know an earlier run hid
+  // them, so every non-hide decision shows them again. The ref is for `load`.
+  const [markersHidden, setMarkersHiddenState] = useState(false);
+  const markersHiddenRef = useRef(false);
+  const setMarkersHidden = useCallback((v: boolean) => {
+    markersHiddenRef.current = v;
+    setMarkersHiddenState(v);
+  }, []);
 
   const tRef = useRef(t);
   tRef.current = t;
@@ -203,35 +214,62 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
     const map = mapRef.current;
     if (!map || !enabled) {
       setData(null);
+      setMarkersHidden(false);
       setStatus((s) => ({ ...s, phase: 'off', shown: 0, truncated: false, error: null }));
       return;
     }
     if (configured === false) {
       setData(null);
+      setMarkersHidden(false);
       setStatus((s) => ({ ...s, phase: 'no_cookie', shown: 0, truncated: false, error: null }));
       return;
     }
     let disposed = false;
     let stopped = false;
     let blockedUntil = 0;
+    // The 429's message: the zoom hint overwrites it, and a fetch held back by
+    // the back-off shows it again.
+    let blockedError = '';
     const planner = createPipiFetchPlanner();
+    // How the kept data was fetched, restored by a reuse right after a hide.
+    // A reuse only follows a fetch this run's planner recorded, so this always
+    // describes the data that reuse draws.
+    let fetchedStatus: Pick<PipiLayerStatus, 'phase' | 'truncated' | 'updatedAt'> | null = null;
     let ctrl: AbortController | null = null;
     let debounce: number | undefined;
 
+    // Hiding and redrawing go by zoom alone; only sending a request also
+    // waits for a stop (bad cookie) or a 429 back-off to clear. The status,
+    // in order: stopped → its error stays; hide → zoom hint; reuse right after
+    // a hide → the kept fetch's result; fetch sent → loading; fetch held back
+    // by the back-off → the 429's error.
     const load = async (force: boolean) => {
-      if (disposed || stopped || document.hidden) return;
+      if (disposed || document.hidden) return;
       const zoom = Math.round(map.getZoom());
       const view = map.getBounds();
       const decision = planner.plan({ zoom, view: toBox(view), now: Date.now(), force });
       if (decision === 'hide') {
-        // The planner drops its record on hide too, so clearing the data here
-        // keeps the two in step. Never rebuild the planner here instead.
+        // Never clear the data or rebuild the planner here: either one makes
+        // every zoom back in refetch, and no automated test would catch it.
         ctrl?.abort();
-        setData(null);
-        setStatus((s) => ({ ...s, phase: 'zoom', shown: 0, truncated: false, error: null, zoom }));
+        setMarkersHidden(true);
+        if (!stopped) setStatus((s) => ({ ...s, phase: 'zoom', shown: 0, truncated: false, error: null, zoom }));
         return;
       }
-      if (Date.now() < blockedUntil || decision === 'reuse') return;
+      const wasHidden = markersHiddenRef.current;
+      setMarkersHidden(false);
+      if (stopped) return;
+      if (decision === 'reuse') {
+        // With the markers already up the status is left alone, so the error
+        // of a failed forced refresh or a 429 isn't replaced by the count.
+        const kept = fetchedStatus;
+        if (wasHidden && kept) setStatus((s) => ({ ...s, ...kept, error: null, zoom }));
+        return;
+      }
+      if (Date.now() < blockedUntil) {
+        setStatus((s) => ({ ...s, phase: 'error', error: blockedError, zoom }));
+        return;
+      }
       const padded = view.pad(BBOX_PAD);
       // Leaflet doesn't wrap longitude when the user pans across the
       // antimeridian; query the -180..180 equivalent and shift results back.
@@ -248,20 +286,23 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
         }, c.signal);
         if (disposed || c.signal.aborted) return;
         planner.record({ bounds: toBox(padded), at: Date.now(), zoom, truncated: res.truncated });
+        const result = { phase: res.region ? 'ok' : 'region', truncated: res.truncated, updatedAt: Date.now() } as const;
+        fetchedStatus = result;
         setData({ res, offset: res.now_ms - Date.now(), lngShift });
-        setStatus((s) => ({
-          ...s, phase: res.region ? 'ok' : 'region', truncated: res.truncated,
-          updatedAt: Date.now(), error: null, zoom,
-        }));
+        setStatus((s) => ({ ...s, ...result, error: null, zoom }));
       } catch (e) {
         if (disposed || c.signal.aborted || (e as Error)?.name === 'AbortError') return;
         const err = e instanceof PipiApiError ? e : null;
-        if (err?.code === 'pipi_rate_limited') blockedUntil = Date.now() + (err.retryAfter ?? 60) * 1000;
+        const message = (e as Error).message || String(e);
+        if (err?.code === 'pipi_rate_limited') {
+          blockedUntil = Date.now() + (err.retryAfter ?? 60) * 1000;
+          blockedError = message;
+        }
         if (err && STOP_CODES.has(err.code)) {
           stopped = true;
           if (err.code === 'pipi_no_cookie') setConfigured(false);
         }
-        setStatus((s) => ({ ...s, phase: 'error', error: (e as Error).message || String(e), zoom }));
+        setStatus((s) => ({ ...s, phase: 'error', error: message, zoom }));
       }
     };
 
@@ -282,14 +323,16 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
       map.off('moveend', onMove);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [enabled, configured, reloadToken, mapRef]);
+  }, [enabled, configured, reloadToken, mapRef, setMarkersHidden]);
 
   // ── Markers ───────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     const reopenId = reopenIdRef.current;
     reopenIdRef.current = null;
-    if (!map || !enabled || !data) {
+    // `markersHidden` has to come after the reopen id is cleared: a popup
+    // closed by hiding must not reopen when the markers come back.
+    if (!map || !enabled || !data || markersHidden) {
       setStatus((s) => (s.shown ? { ...s, shown: 0 } : s));
       return;
     }
@@ -379,7 +422,7 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
       layer.remove();
     };
   }, [
-    data, enabled, kinds.mushroom, kinds.flower, kinds.smoke,
+    data, markersHidden, enabled, kinds.mushroom, kinds.flower, kinds.smoke,
     flowerFilter.ribbonOnly, flowerFilter.showCommon, markerSize, mapRef,
   ]);
 

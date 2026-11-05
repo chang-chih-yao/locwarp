@@ -146,6 +146,9 @@ are in `frontend/src/defaults.ts`.
 - **Frontend:**
   - 700 ms debounce after map moves.
   - A query box padded by 25%; no refetch while the view stays inside it.
+  - Zooming below 15 only hides the markers; the data and the last query box
+    are kept. Zooming back in redraws them after the debounce, and the same
+    reuse rules decide whether to fetch.
   - 60 s refresh.
   - At most 1500 markers. This is LocWarp's own rendering cap, not a throttle
     on the site, so tighten-only does not apply to it. Open bug: it cuts in

@@ -48,17 +48,14 @@ export function createPipiFetchPlanner() {
      * @param req.view the visible map box (not padded, not wrapped).
      * @param req.now caller's clock in ms; the planner never reads the clock.
      * @param req.force true for the forced refresh, which skips `reuse`.
-     * @returns `hide` below {@link PIPI_MIN_ZOOM}; `reuse` when the last fetch
-     *   still covers the view, is under {@link PIPI_FRESH_MS} old and was not
-     *   truncated at another zoom; otherwise `fetch`.
+     * @returns `hide` below {@link PIPI_MIN_ZOOM}, keeping the last fetch;
+     *   `reuse` when the last fetch still covers the view, is under
+     *   {@link PIPI_FRESH_MS} old and was not truncated at another zoom;
+     *   otherwise `fetch`.
      */
     plan(req: { zoom: number; view: PipiBox; now: number; force: boolean }): PipiFetchDecision {
-      if (req.zoom < PIPI_MIN_ZOOM) {
-        // The hook still drops its data on hide, so a kept record would
-        // `reuse` data that is gone. Both go together when hide keeps data.
-        last = null;
-        return 'hide';
-      }
+      // The record is left as it is: zooming back in may still reuse it.
+      if (req.zoom < PIPI_MIN_ZOOM) return 'hide';
       if (
         !req.force && last && contains(last.bounds, req.view) && req.now - last.at < PIPI_FRESH_MS
         // The site cut a truncated answer short for that zoom; another zoom

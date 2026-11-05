@@ -79,3 +79,28 @@ test('zoom 13 時即使有新鮮、涵蓋畫面的資料也藏起來，不沿用
   const planner = plannerWithFetch();
   assert.equal(planner.plan({ zoom: 13, view: VIEW, now: T0 + 1000, force: false }), 'hide');
 });
+
+test('縮到門檻以下再放大回同一個畫面，60 秒內沿用縮小前的資料，不重抓', () => {
+  const planner = plannerWithFetch();
+  assert.equal(planner.plan({ zoom: 14, view: VIEW, now: T0 + 5000, force: false }), 'hide');
+  assert.equal(planner.plan({ zoom: 15, view: VIEW, now: T0 + 10_000, force: false }), 'reuse');
+});
+
+test('縮小期間 60 秒自動更新觸發，放大回同一個畫面時仍沿用縮小前的資料', () => {
+  const planner = plannerWithFetch();
+  assert.equal(planner.plan({ zoom: 14, view: VIEW, now: T0 + 5000, force: true }), 'hide');
+  assert.equal(planner.plan({ zoom: 15, view: VIEW, now: T0 + 10_000, force: false }), 'reuse');
+});
+
+test('縮小期間平移到抓取範圍外，放大回來就重抓', () => {
+  const planner = plannerWithFetch();
+  const elsewhere: PipiBox = { north: 25.16, south: 25.13, east: 121.54, west: 121.49 };
+  assert.equal(planner.plan({ zoom: 14, view: VIEW, now: T0 + 5000, force: false }), 'hide');
+  assert.equal(planner.plan({ zoom: 15, view: elsewhere, now: T0 + 10_000, force: false }), 'fetch');
+});
+
+test('縮小期間資料滿 60 秒，放大回同一個畫面就重抓，不沿用過期的資料', () => {
+  const planner = plannerWithFetch();
+  assert.equal(planner.plan({ zoom: 14, view: VIEW, now: T0 + 5000, force: false }), 'hide');
+  assert.equal(planner.plan({ zoom: 15, view: VIEW, now: T0 + 60_000, force: false }), 'fetch');
+});

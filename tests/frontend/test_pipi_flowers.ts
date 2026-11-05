@@ -32,13 +32,16 @@ function flower(key: string, displayName: string, bloomedMs = NOW - 5 * HOUR): P
   return { ...base(), itemKind: 'flower', key, displayName, state: 'Flower', bloomedMs, wiltingMs: bloomedMs + 23 * HOUR };
 }
 
+// The four 普花 花種 as the spec lists them: key → displayName.
+const COMMON_FLOWERS = [
+  ['f:White:Common', '白色花朵'],
+  ['f:Red:Common', '紅色花朵'],
+  ['f:Yellow:Common', '黃色花朵'],
+  ['f:Blue:Common', '藍色花朵'],
+] as const;
+
 test('普花是白色、紅色、黃色、藍色花朵這四個花種', () => {
-  for (const [key, name] of [
-    ['f:White:Common', '白色花朵'],
-    ['f:Red:Common', '紅色花朵'],
-    ['f:Yellow:Common', '黃色花朵'],
-    ['f:Blue:Common', '藍色花朵'],
-  ]) {
+  for (const [key, name] of COMMON_FLOWERS) {
     assert.equal(isCommonFlower(flower(key, name)), true, key);
   }
 });
@@ -177,12 +180,7 @@ test('原站若讓花苞帶著盛開時間，勾只顯示彩帶時花苞仍被�
 
 test('取消顯示普花時，四個普花花種的花苞也藏掉', () => {
   const hideCommon = { ribbonOnly: false, showCommon: false };
-  for (const [key, name] of [
-    ['f:White:Common', '白色花朵'],
-    ['f:Red:Common', '紅色花朵'],
-    ['f:Yellow:Common', '黃色花朵'],
-    ['f:Blue:Common', '藍色花朵'],
-  ]) {
+  for (const [key, name] of COMMON_FLOWERS) {
     for (const state of ['Leaf', 'Bud']) {
       assert.equal(passesFlowerFilter(bud(key, name, state), hideCommon, NOW), false, `${key} ${state}`);
     }

@@ -112,6 +112,21 @@ test('原站若讓蘑菇、煙霧也帶盛開時間，它們仍不是彩帶花',
   assert.equal(ribbonEndMs(smoke, NOW), null);
 });
 
+// With a 2026 `now`, a bloom time of 0 already fails the 60-minute rule, so
+// these run within an hour of the epoch, where only the "> 0" rule rejects it.
+test('原站若用 0 或負數代表盛開時間沒有值，就算伺服器時間在 epoch 後一小時內也不算彩帶花', () => {
+  const nearEpoch = 30 * MIN;
+  for (const bloomedMs of [0, -10 * MIN]) {
+    const unset = { ...flower('f:White:Geranium', '白色天竺葵'), bloomedMs, wiltingMs: 23 * HOUR };
+    assert.equal(ribbonEndMs(unset, nearEpoch), null, String(bloomedMs));
+  }
+});
+
+test('原站若用 Infinity 代表不會枯萎，當作沒有值，不算彩帶花', () => {
+  const neverWilts = { ...flower('f:White:Geranium', '白色天竺葵', NOW - 10 * MIN), wiltingMs: Infinity };
+  assert.equal(ribbonEndMs(neverWilts, NOW), null);
+});
+
 test('原站若把時間欄位改成字串（後端原樣轉送不檢查型別），當作沒有值，不算彩帶花', () => {
   const inWindow = flower('f:White:Geranium', '白色天竺葵', NOW - 10 * MIN);
   const asString = (ms: number) => String(ms) as unknown as number;

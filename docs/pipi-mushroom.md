@@ -7,7 +7,7 @@ Google login on that site, so LocWarp proxies it with the user's browser
 cookie. A Chrome extension keeps that cookie in sync.
 
 Contracts for editing these files: `.claude/rules/pipi-mushroom.md`.
-Tests: `tests/pipi/`.
+Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`.
 
 ## Pieces
 
@@ -17,7 +17,8 @@ Tests: `tests/pipi/`.
 | API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items` |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
 | Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling |
-| Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, cookie paste/clear, status |
+| Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`: 普花 / 彩帶花 checks and the 花的子篩選 (see Flowers below) |
+| Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), cookie paste/clear, status |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
 | Extension | `extensions/pipi-cookie-sync/` | pushes the browser's Cookie header to `127.0.0.1:8777` (user guide: its `README.md`) |
 
@@ -49,6 +50,72 @@ also present but the server ignores them.
 
 Login lifetime: `authExpiresUtc` sits about 15 minutes ahead and is extended
 on use. Observed: 15:40:38Z was extended to 15:55:23Z.
+
+## Flowers: item format and the 花的子篩選 (2026-11-05)
+
+Sources, to re-check when the site changes:
+
+- Site behaviour: `Scripts/dist/mfmap.min.js`, downloaded 2026-11-05.
+- Data format: one items API sample through LocWarp (Taipei, zoom 15):
+  851 items, 600 flowers, 267 of them 普花, 2 彩帶花.
+
+Terms follow `GLOSSARY.md` (花種, 花苞, 普花, 彩帶花). All the rules below
+live in `frontend/src/pipiFlowers.ts`, so a site format change is fixed there.
+
+**Item format.** The backend forwards `key`, `state`, `bloomedMs` and
+`wiltingMs` as the site sends them, without type checks.
+
+- A flower's `key` is `f:<colour>:<variety>`; `displayName` is the 花種's
+  Chinese name.
+- 花苞 have `state` `Leaf` or `Bud` and the same `key` as the flower they
+  grow into. Their `bloomedMs` and `wiltingMs` are 0. The site also labels
+  `Pre-Flower` as 花苞; the sample had none, so its time fields are unknown.
+- A bloomed flower wilts 23 h after `bloomedMs`.
+
+**普花** (`isCommonFlower`) is an exact `key` match, which also catches their 花苞:
+
+| key | 花種 |
+| --- | --- |
+| `f:White:Common` | 白色花朵 |
+| `f:Red:Common` | 紅色花朵 |
+| `f:Yellow:Common` | 黃色花朵 |
+| `f:Blue:Common` | 藍色花朵 |
+
+Other 花種 of the same colour (`f:White:Geranium`, `f:White:Cherryblossom`)
+are not 普花, and neither is a future `f:Purple:Common`. There is no
+"`Common` variety" rule and no name matching.
+
+**花苞:** `state` normalised as the site does it (trim, drop spaces,
+underscores and hyphens, lowercase) is `leaf`, `bud` or `preflower`.
+
+**彩帶花** (`ribbonEndMs`) needs all of these:
+
+- `itemKind` is `flower` and it is not a 花苞. The sample's 花苞 already
+  fail on their zero times; this rule covers `Pre-Flower`, whose times are
+  unknown.
+- `bloomedMs` and `wiltingMs` are finite numbers > 0. Anything else, a
+  string included, counts as unset.
+- `bloomedMs ≤ now < wiltingMs` and `now < bloomedMs + 60 min`.
+
+The 彩帶期 ends at the earlier of `bloomedMs + 60 min` and `wiltingMs`. The
+site's own check is the same idea: bloomed, within 60 min of `bloomedMs`,
+not wilted. `now` is server time (local clock + the `now_ms` offset), like
+the layer's expiry checks. The site uses the local clock, so the two can
+disagree slightly when the local clock is off.
+
+**花的子篩選** (`passesFlowerFilter`): two panel checkboxes, saved as
+`locwarp.pipi_flower_filter`; initial values and `resolvePipiFlowerFilter`
+are in `frontend/src/defaults.ts`.
+
+- 只顯示彩帶 (initially off) keeps only 彩帶花. Unticking 顯示普花
+  (initially on) drops 普花 and their 花苞. A flower must pass both.
+- Mushrooms and smoke always pass. The 花 kind chip stays the master switch
+  and is applied outside this module.
+- The site's 強制顯示彩帶花 (on by default) overrides each 花種's own
+  checkbox. LocWarp deliberately does not copy it, and no combination of the
+  two checkboxes reproduces it.
+- The site fetches `items` with no filter and filters in the browser, so the
+  sub-filters need no change to upstream requests.
 
 ## Throttling (deliberate; keep it)
 

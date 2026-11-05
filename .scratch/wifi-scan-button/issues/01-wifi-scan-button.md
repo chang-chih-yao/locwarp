@@ -1,6 +1,6 @@
 # 01 裝置連線：新增「掃描 WiFi 裝置」按鈕，自動連線改成逐台跳過已連上的裝置
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: feature
 
@@ -241,3 +241,73 @@ Type: feature
     - Q12：自動連線也改成逐台跳過，跟 WiFi 掃描共用規則、帶 `skip_connected`。沒有採用「照註解修好、整個跳過」。
     - Q13：GLOSSARY 的自動連線收窄成「開啟 LocWarp 時的那一次嘗試」。
     - Q14：GLOSSARY 和這張票在實作前先各自 commit。
+- 2026-11-06：實作在 `aa79d26`。
+  - 測試：
+    - 前端 88/88（0 skipped），新檔 `tests/frontend/test_wifi_candidates.ts` 11 個。
+    - `tests/device/test_wifi_skip_connected.py` 5 個情境，比票上多一個 `/wifi/tunnel/status` 回 `target_ip`／`target_port`。
+    - `tests/pipi/` 四支 `test_*.py` 都過；`check_live_anonymous.py` 會打真的網站，是手動 smoke test，沒有跑。
+    - `node tests/pipi/test_extension.js` 過，`npm run build` 過。
+    - Mutation：票上列的 10 種，加上 review 後補的「UDID 改成通過跳過規則後才佔」，共 11 種，都讓測試變紅。
+  - 實作時跟票不同、或票裡沒明講的：
+    - 候選模組不收「剩下的名額」，改在模組裡用 `MAX_DEVICES − 已連上台數` 算，並匯出 `MAX_DEVICES`。這樣「最多 3 − 已連上裝置數」這條本身測得到。
+    - `useDevice` 只有一個 `findAndConnectWifi(mode)`，自動連線帶 `'auto'`、WiFi 掃描帶 `'scan'`。存過的 IP 讀取（含舊版單一 IP 的 fallback）從 `App.tsx` 搬進 `useDevice`，兩種模式都會用到。
+    - `needsDiscovery(mode, pins)` 也放在模組裡：自動連線有釘選時連偵測都不呼叫，跟候選規則用同一個判斷。
+    - `wifiAutoConnectAttemptedRef` 改成計時器真的觸發時才設。原本在排計時器前就設，WS 在 1.5 秒內斷掉、計時器被清掉時，自動連線就再也不會跑，「已跑完」也永遠不會成立，開啟提示不會出現。
+    - 「那次掃描結束時的已連上台數」用掃描結束時的裝置清單，加上這次新連上的 UDID 取聯集，不是用「掃描前台數 + n」推算。掃描中途插上 USB 時，掃描提醒才不會被錯誤地藏起來。（review 後修）
+    - 兩顆半寬按鈕蓋掉 `.action-btn` 的 `white-space: nowrap`。側欄 260 px，每顆約 107 px，不換行的話「新連上 1 台、1 台連線失敗」會被切掉。這段文字會換成三行；英文的按鈕名稱也會換成兩行。
+    - 自動連線進行中時，WiFi 掃描按鈕只是灰掉，沒有額外的 tooltip。票只規定了「已連上 3 台」的 tooltip。
+  - 人工驗證（agent 用 `start.py` 啟動，在瀏覽器驗）：
+    - 環境與防護：
+      - 驗證時後端 `/list`、`/wifi/tunnel/status` 都是空的，沒有手機連著。`/discover` 實際結果是 mDNS 空、子網掃描也沒找到主機，WiFi 上沒有 iPhone。
+      - `start.py` 的 `webbrowser.open` 在啟動時換成空函式，免得開出沒攔截的分頁跑真的自動連線。
+      - 另起一個驗證用的 Vite（5174 port，設定檔在 scratchpad），在 `index.html` 最前面注入 `fetch` 攔截，app 程式碼執行前就生效。`/list`、`/wifi/tunnel/status`、`/discover`、`start-and-connect` 都回假結果，其他非 GET 的 `/api/device/*` 一律擋下。
+    - 兩顆按鈕並排；WiFi 面板收著也看得到「掃描 WiFi 裝置」；進行中顯示「掃描中」、不能按。
+    - 四種組合各出現一次：
+      - 綠「新連上 1 台」，無提醒。
+      - 橘「新連上 1 台、1 台連線失敗」，無提醒。
+      - 紅「1 台連線失敗」，無提醒；0 台連上時也一樣。
+      - 紅「沒有找到新的 iPhone」，下方出現「請確認手機 WiFi 已開、跟電腦在同一網路」。群組裡已有別台連著時也會出現。
+    - 驗證時發現：combo 1 的假成功會被 `upsertSavedIp` 寫進 savedips，之後它變成存過的 IP 候選，連不上時依規則不算 m，還會佔掉名額。這符合規則；之後每個組合前都先清 savedips。
+    - 掃描提醒：
+      - 連上台數變多就消失。用假的 `/list` 多一台、按 USB 掃描刷新來模擬。
+      - 下一次 WiFi 掃描開始時就消失。
+      - 掃描中插上 USB，結束時照樣出現。
+    - 已連上 3 台時按鈕不能按，`title` 是「已連上 3 台」。原生 tooltip 截圖拍不到，只看 DOM。
+    - 自動連線：
+      - 開關開著、跑完一台都沒連上：出現開啟提示。按一次 WiFi 掃描後不再出現，失敗、0 台連上時也不出現。
+      - 開關關掉再重新整理：沒有偵測請求、沒有開啟提示、按鈕一開始就能按。
+      - 計時器還沒到（載入後 525 ms）和偵測進行中（3.5 s）時，WiFi 掃描按鈕不能按。
+      - USB-X 用 USB 連著、savedips 有它的 IP：沒有送它的請求。另一台存過的手機的請求帶 `skip_connected: true`，回 `already_connected` 後裝置清單、通道、savedips 都沒變。
+    - 英文：按鈕、四種結果、開啟提示的字串都對。
+    - 慢的情況（`/discover` 用真的後端）：
+      - 沒有存過的 IP：從按下到出現結果 3.9 秒。mDNS 等 3 秒，子網掃描沒找到主機。
+      - 加一個存過、但沒人用的 IP（192.168.0.250，ping 不到，等同手機 WiFi 沒開），讓它的 `start-and-connect` 真的送到後端：10.9 秒。偵測約 4 秒；握手 1 秒逾時；後端重掃 Port 6 秒，沒找到。
+      - 前端要等偵測結束才開始連線，所以存過的 IP 要多等偵測那約 4 秒。依「不做」，沒有改。
+      - 這次網路上沒有「開著 49152 的非 iPhone 主機」，所以沒量到每台最多 45 秒的情況。
+    - 驗證時的疏失：
+      - 做完上面那次 10.9 秒的量測後，沒有把驗證頁 localStorage 裡的 `realConnect` 關掉，接著改 code 觸發 HMR，元件重掛、ref 歸零，自動連線又跑了兩次。
+      - 所以後端另外收到兩筆 `start-and-connect`，都是打 192.168.0.250。頁面上那層「只放行 .250」的保險還在，所以沒打到其他 IP。
+      - 後端 log 共三筆 `WiFi tunnel start: ip=192.168.0.250`，對上三筆 POST。沒有建出通道，驗完 `/list`、`/wifi/tunnel/status` 都還是空的。
+    - 驗完：關掉分頁，清掉 5174 的 localStorage，停掉後端與兩個 Vite。
+  - 沒驗到：
+    - 使用者用真手機實測的五條，都還沒做。
+    - 真的 mDNS 找到 iPhone、真的握手成功或失敗的路徑：瀏覽器裡都用假結果。後端那段只有 `test_wifi_skip_connected.py` 的假物件測試。
+  - code review（Standards、Spec 兩軸）：
+    - 採納：
+      - `DeviceStatus` 的 `MAX_TUNNEL_DEVICES` 別名拿掉，tunnel 上限也用 `MAX_DEVICES`，跟後端兩種上限都用 `MAX_DEVICES` 一致。
+      - 補測試：最新的存檔 IP 被通道 IP 擋掉時，同一台手機不退回較舊的位址。並加進 mutation。
+      - `connectedAfter` 改用掃描結束時的實際台數，見上面。
+      - `DiscoveredInput.method` 從 `string` 改成 `'mdns' | 'tcp_scan'`。
+      - 正式程式碼裡的 Q／review 編號，補上這張票的路徑。
+    - 沒採納：
+      - Data Clumps：傳給 `DeviceStatus` 的 6 個 props 是這張票指定的狀態，各自有不同的生命週期。
+      - Duplicated Code：轉圈 SVG 和閃字計時器照抄 USB 鈕。抽出來要改到 USB 鈕，不在這張的範圍。
+      - `startWifiTunnel` 的第 5 個位置參數 `skipConnected`：沿用這個函式原本的參數風格。
+      - `showOpenHint`／`showScanReminder` 沒有自動測試：不在約定的 seam 上，靠人工驗證。
+  - 待決定（Spec review 提出，票沒規定，沒有改）：
+    - USB 連著的手機，它存過的 IP 會被跳過，但同一支手機的 mDNS 結果沒有 UDID，照樣會成為候選、佔掉名額。三台的群組裡，可能把真正還沒連上的手機擠出這一輪。後端會回 `already_connected`，不會出事。
+    - 可以補一條規則：偵測結果的 IP 等於「已連上 UDID 的存檔 IP」時也跳過。代價是 DHCP 把那個 IP 給了別台手機時，會誤跳過。要不要做由使用者決定。
+  - 待清理：
+    - `frontend/src/components/DeviceChipRow.tsx` 還有自己的 `MAX_DEVICES = 3`。保留 `wifiCandidates.ts` 匯出的那個，理由是有測試；`DeviceChipRow` 那份之後改成 import。
+  - 跟這張票無關、沒有修：
+    - USB 掃描按鈕閃的「找到 n 台裝置」可能少算。`App` 傳的 `onScan={() => { device.scan() }}` 沒有回傳 promise，按鈕在掃描結束前就讀裝置數。驗證時 `/list` 回 2 台，按鈕閃「找到 1 台裝置」。

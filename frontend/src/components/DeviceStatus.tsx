@@ -7,8 +7,8 @@ import {
   type SavedTunnelIp,
 } from '../utils/savedTunnelIps';
 import { getHostPrefix } from '../utils/hostNetwork';
-
-const MAX_TUNNEL_DEVICES = 3;
+import { MAX_DEVICES, type WifiScanTally } from '../wifiCandidates';
+import type { FindAndConnectResult } from '../hooks/useDevice';
 
 interface Device {
   id: string;
@@ -37,6 +37,18 @@ interface DeviceStatusProps {
   onWifiConnect?: (ip: string) => Promise<any>;
   pinnedUdids?: string[];
   onTogglePin?: (udid: string) => void;
+  /** Connected devices, USB and WiFi; `Device` carries no connected flag. */
+  connectedCount?: number;
+  /** WiFi 掃描 (GLOSSARY.md: 裝置連線). */
+  onWifiScan?: () => Promise<WifiScanTally>;
+  /** 自動連線 is scheduled or in flight. */
+  autoConnectRunning?: boolean;
+  /** This page load's 自動連線 pass has ended. */
+  autoConnectDone?: boolean;
+  /** WiFi 掃描 was pressed at least once since the page loaded. */
+  wifiScanPressed?: boolean;
+  /** The last finished WiFi 掃描; null while one runs or before the first. */
+  lastWifiScan?: FindAndConnectResult | null;
 }
 
 const DeviceStatus: React.FC<DeviceStatusProps> = ({
@@ -52,6 +64,12 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   onWifiConnect,
   pinnedUdids = [],
   onTogglePin,
+  connectedCount = 0,
+  onWifiScan,
+  autoConnectRunning = false,
+  autoConnectDone = false,
+  wifiScanPressed = false,
+  lastWifiScan = null,
 }) => {
   const t = useT();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -162,8 +180,45 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
     }
   };
 
+  // WiFi 掃描: same 2 s result flash as the USB button.
+  const [wifiScanning, setWifiScanning] = useState(false);
+  const [wifiScanFlash, setWifiScanFlash] = useState<WifiScanTally | null>(null);
+  const wifiScanFlashTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wifiFull = connectedCount >= MAX_DEVICES;
+  // Blocked while 自動連線 runs too, so the two never handshake one phone at once.
+  const wifiScanDisabled = !onWifiScan || wifiScanning || autoConnectRunning || wifiFull;
+  const handleWifiScan = async () => {
+    if (!onWifiScan) return;
+    if (wifiScanFlashTimer.current) clearTimeout(wifiScanFlashTimer.current);
+    setWifiScanning(true);
+    setWifiScanFlash(null);
+    try {
+      const res = await onWifiScan();
+      setWifiScanFlash(res);
+      wifiScanFlashTimer.current = setTimeout(() => setWifiScanFlash(null), 2000);
+    } catch {
+      /* nothing to flash; the hint row below still reflects the live state */
+    } finally {
+      setWifiScanning(false);
+    }
+  };
+  // One line under the scan buttons. The two conditions can't both hold (the
+  // open hint needs "never pressed", the reminder a finished scan), and both
+  // are recomputed every render rather than cleared by events.
+  const showOpenHint = autoConnectEnabled && autoConnectDone && connectedCount === 0 && !wifiScanPressed;
+  // A failure means the phone's WiFi is on, so "check WiFi" only fits
+  // n = m = 0. Compared with the count at scan end, so a group whose other
+  // phones are already connected still sees it.
+  const showScanReminder = !!lastWifiScan
+    && lastWifiScan.connected === 0 && lastWifiScan.failed === 0
+    && connectedCount <= lastWifiScan.connectedAfter;
+  const scanHint = showOpenHint
+    ? t('device.wifi_scan_open_hint')
+    : showScanReminder ? t('device.wifi_scan_none_hint') : null;
+
   React.useEffect(() => () => {
     if (scanResultTimer.current) clearTimeout(scanResultTimer.current);
+    if (wifiScanFlashTimer.current) clearTimeout(wifiScanFlashTimer.current);
   }, []);
   // WiFi tunnel remains iOS 17+ only; iOS 16 devices are supported over USB.
 
@@ -204,6 +259,41 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
     setTunnelIp(r.ip);
     setTunnelPort(String(r.port));
     setDiscoverResults([]);
+  };
+
+  // The USB and WiFi 掃描 buttons split the 260 px sidebar in half, too
+  // narrow for a result like 「新連上 1 台、1 台連線失敗」, so the text wraps
+  // (overriding .action-btn's nowrap) instead of being cut off.
+  const scanButtonStyle: React.CSSProperties = {
+    flex: 1, minWidth: 0, padding: '6px 8px', fontSize: 12, lineHeight: 1.3,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, textAlign: 'center',
+    whiteSpace: 'normal',
+  };
+
+  const renderWifiScanFlash = ({ connected: n, failed: m }: WifiScanTally) => {
+    if (n > 0) {
+      const color = m > 0 ? '#ffb74d' : '#4caf50';
+      return (
+        <>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" style={{ flexShrink: 0 }}>
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span style={{ color }}>
+            {m > 0 ? t('device.wifi_scan_mixed', { n, m }) : t('device.wifi_scan_connected', { n })}
+          </span>
+        </>
+      );
+    }
+    return (
+      <>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f44336" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+          <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+        </svg>
+        <span style={{ color: '#f44336' }}>
+          {m > 0 ? t('device.wifi_scan_failed', { m }) : t('device.wifi_scan_none')}
+        </span>
+      </>
+    );
   };
 
   // Section label inside the recent-IP dropdown. Only rendered when the
@@ -342,12 +432,14 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
         </div>
       </div>
 
-      {/* USB scan button — standalone row below device info */}
+      {/* Scan row below device info: USB | WiFi 掃描. Outside the collapsible
+          WiFi panel so it stays reachable with the panel closed. */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: scanHint ? 4 : 8 }}>
       <button
         className="action-btn"
         onClick={handleScan}
         disabled={scanning}
-        style={{ width: '100%', padding: '6px 10px', fontSize: 12, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+        style={scanButtonStyle}
         title={t('device.scan_tooltip')}
       >
         {scanning ? (
@@ -375,6 +467,32 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
           t('device.scan_tooltip')
         )}
       </button>
+      <button
+        className="action-btn"
+        onClick={handleWifiScan}
+        disabled={wifiScanDisabled}
+        style={scanButtonStyle}
+        title={wifiFull ? t('device.wifi_scan_full', { n: MAX_DEVICES }) : t('device.wifi_scan')}
+      >
+        {wifiScanning ? (
+          <>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}>
+              <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="16" />
+            </svg>
+            {t('device.scan_scanning')}
+          </>
+        ) : wifiScanFlash ? (
+          renderWifiScanFlash(wifiScanFlash)
+        ) : (
+          t('device.wifi_scan')
+        )}
+      </button>
+      </div>
+      {scanHint && (
+        <div style={{ fontSize: 11, lineHeight: 1.4, color: '#ffb74d', marginBottom: 8, padding: '4px 6px', background: 'rgba(255,183,77,0.1)', borderRadius: 3 }}>
+          {scanHint}
+        </div>
+      )}
 
       {/* WiFi tunnel cards for additional devices not shown in the top row */}
       {tunnels.filter((tn) => tn.udid !== device?.id).length > 0 && (
@@ -615,7 +733,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                 </button>
                 <button
                   onClick={handleDiscover}
-                  disabled={discovering || tunnels.length >= MAX_TUNNEL_DEVICES}
+                  disabled={discovering || tunnels.length >= MAX_DEVICES}
                   title={t('wifi.detect_tooltip')}
                   style={{
                     flex: 1, fontSize: 11, padding: '5px 0', borderRadius: 5,
@@ -623,7 +741,7 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
                     background: 'rgba(108, 140, 255, 0.12)',
                     color: '#6c8cff', cursor: discovering ? 'wait' : 'pointer',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                    opacity: (discovering || tunnels.length >= MAX_TUNNEL_DEVICES) ? 0.5 : 1,
+                    opacity: (discovering || tunnels.length >= MAX_DEVICES) ? 0.5 : 1,
                   }}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={discovering ? { animation: 'spin 1s linear infinite' } : undefined}>
@@ -765,14 +883,14 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
               {/* iOS 17+ WiFi Tunnel (RSD) — add form */}
               {onStartWifiTunnel && (
                 <>
-                  {tunnels.length >= MAX_TUNNEL_DEVICES ? (
+                  {tunnels.length >= MAX_DEVICES ? (
                     <div style={{
                       fontSize: 11, padding: '6px 8px', textAlign: 'center',
                       opacity: 0.5,
                       border: '1px dashed rgba(255,255,255,0.15)',
                       borderRadius: 3,
                     }}>
-                      {t('wifi.tunnel_max_reached', { max: MAX_TUNNEL_DEVICES })}
+                      {t('wifi.tunnel_max_reached', { max: MAX_DEVICES })}
                     </div>
                   ) : (
                     <div>

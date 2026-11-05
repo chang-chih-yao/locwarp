@@ -1,0 +1,154 @@
+// Who gets a WiFi 通道 attempt during 自動連線 and WiFi 掃描 (see
+// GLOSSARY.md: 裝置連線), and how a WiFi 掃描's results are counted.
+//
+// No runtime imports and erasable-syntax-only so `node --test` can load it
+// directly. Q / review numbers refer to
+// .scratch/wifi-scan-button/issues/01-wifi-scan-button.md.
+
+/** 自動連線 (`auto`) or a WiFi 掃描 the user pressed (`scan`). */
+export type ConnectMode = 'auto' | 'scan';
+
+/** A saved address, already narrowed to this PC's LAN by `savedIpsForPrefix`. */
+export interface SavedIpInput {
+  ip: string;
+  port: number;
+  /** Missing on old entries and on the legacy single-IP fallback. */
+  udid?: string;
+  lastUsed: number;
+}
+
+/** One `/wifi/tunnel/discover` hit. */
+export interface DiscoveredInput {
+  ip: string;
+  port: number;
+  /** Every open port a subnet scan found; mDNS hits have none. */
+  ports?: number[];
+  /** How the backend found it; `tcp_scan` is the subnet-scan fallback. */
+  method?: 'mdns' | 'tcp_scan';
+}
+
+export interface CandidateInput {
+  mode: ConnectMode;
+  savedIps: SavedIpInput[];
+  discovered: DiscoveredInput[];
+  /** Every connected device, USB and WiFi. */
+  connectedUdids: string[];
+  /** The phone-side LAN IP of every WiFi 通道 the backend holds. */
+  tunnelIps: string[];
+  pinnedUdids: string[];
+}
+
+/** Group-mode device cap, USB and WiFi together; the backend enforces the same. */
+export const MAX_DEVICES = 3;
+
+/**
+ * Where a candidate came from. `subnet` is the TCP scan fallback: it only
+ * sees an open port, so the host may not be an iPhone at all.
+ */
+export type CandidateSource = 'saved' | 'mdns' | 'subnet';
+
+export interface WifiCandidate {
+  ip: string;
+  /** Ports to try in order, saved ones first; never empty. */
+  ports: number[];
+  /** Which pair record the backend should try first. */
+  udid: string | undefined;
+  sources: CandidateSource[];
+}
+
+/**
+ * Whether discovery results are used at all, so the caller can skip the
+ * mDNS / subnet scan when they aren't.
+ *
+ * Pins only govern connecting without a button press (Q5): 自動連線 with
+ * pins sticks to the pinned phones' saved addresses, so a friend's phone on
+ * the same WiFi isn't grabbed (issue #35).
+ */
+export function needsDiscovery(mode: ConnectMode, pinnedUdids: ReadonlyArray<string>): boolean {
+  return mode === 'scan' || pinnedUdids.length === 0;
+}
+
+/**
+ * The addresses to start a WiFi 通道 on, best first.
+ *
+ * @param input everything known about the LAN and the devices right now.
+ * @returns at most `MAX_DEVICES` minus the connected count, saved addresses first.
+ */
+export function wifiCandidates(input: CandidateInput): WifiCandidate[] {
+  const pinsOnly = !needsDiscovery(input.mode, input.pinnedUdids);
+  const saved = pinsOnly
+    ? input.savedIps.filter((e) => e.udid && input.pinnedUdids.includes(e.udid))
+    : input.savedIps;
+  const discovered = pinsOnly ? [] : input.discovered;
+
+  const out: WifiCandidate[] = [];
+  const add = (ip: string, ports: number[], source: CandidateSource, udid?: string) => {
+    // Applies to every source, not just discovery: a saved address may have
+    // no UDID for the connected-skip to catch, and re-requesting a tunnelled
+    // phone on another port stalls for the full 45 s start budget (review 5).
+    if (input.tunnelIps.includes(ip)) return;
+    // One request per IP. Two requests for one phone (saved port != the
+    // discovered one) race each other in the backend, and the loser burns
+    // up to the 45 s budget before failing.
+    const hit = out.find((c) => c.ip === ip);
+    if (!hit) {
+      out.push({ ip, ports: [...new Set(ports)], udid, sources: [source] });
+      return;
+    }
+    for (const p of ports) if (!hit.ports.includes(p)) hit.ports.push(p);
+    if (!hit.sources.includes(source)) hit.sources.push(source);
+    if (!hit.udid) hit.udid = udid;
+  };
+  // One candidate per phone, the newest address (review 6): entries written
+  // before the prefix tag existed can leave two addresses for one device.
+  // The UDID is claimed before the skips below, so a skipped newest address
+  // doesn't hand the phone to an older, likely dead one.
+  const udidSeen = new Set<string>();
+  for (const e of [...saved].sort((a, b) => b.lastUsed - a.lastUsed)) {
+    if (e.udid) {
+      if (udidSeen.has(e.udid)) continue;
+      udidSeen.add(e.udid);
+    }
+    // Already connected over USB or WiFi: leave it alone, so a USB phone
+    // isn't switched to WiFi and a WiFi phone's route isn't cut (Q9, Q12).
+    if (e.udid && input.connectedUdids.includes(e.udid)) continue;
+    add(e.ip, [e.port], 'saved', e.udid);
+  }
+  for (const d of discovered) {
+    add(d.ip, [d.port, ...(d.ports || [])], d.method === 'mdns' ? 'mdns' : 'subnet');
+  }
+  // Saved addresses were added first, so the cap keeps them over discovery.
+  return out.slice(0, Math.max(0, MAX_DEVICES - input.connectedUdids.length));
+}
+
+/** What one candidate's start-and-connect request came back with. */
+export type CandidateOutcome = 'connected' | 'already_connected' | 'failed';
+
+/** A WiFi 掃描's result as the button reports it. */
+export interface WifiScanTally {
+  /** Newly connected phones. */
+  connected: number;
+  /** Phones known to be on this WiFi that still didn't connect. */
+  failed: number;
+}
+
+/**
+ * Counts a WiFi 掃描 for the button: new connections, and failures.
+ *
+ * @param results each candidate's sources and outcome.
+ * @returns the counts; `already_connected` lands in neither.
+ */
+export function tallyWifiResults(
+  results: ReadonlyArray<{ sources: ReadonlyArray<CandidateSource>; outcome: CandidateOutcome }>,
+): WifiScanTally {
+  let connected = 0;
+  let failed = 0;
+  for (const r of results) {
+    if (r.outcome === 'connected') connected++;
+    // Only an mDNS hit proves the phone is on this WiFi. A saved address
+    // that doesn't answer most often means the phone's WiFi is off (the case
+    // this button exists for), and a subnet-scan host may not be an iPhone.
+    else if (r.outcome === 'failed' && r.sources.includes('mdns')) failed++;
+  }
+  return { connected, failed };
+}

@@ -118,6 +118,7 @@ When an engine fails, that leg falls back to a straight line and the next leg tr
 - **USB**: connects automatically when plugged in, and locking the iPhone screen has no effect. Unplugging is detected within about 4 seconds, and plugging back in recovers without a refresh.
 - **Wi-Fi Tunnel** (iOS 17+, requires one prior USB pairing):
   - "Auto-detect" looks for the device over mDNS first, then scans the local network.
+  - "Scan Wi-Fi devices" (next to "Scan USB devices") finds the iPhones on the same subnet and connects every one that is not connected yet. Connected devices are left alone. If you opened LocWarp before turning on the iPhone's Wi-Fi, press it to connect.
   - Previously used IPs are remembered. You can also pin a device so that it connects on every launch and retries after a drop.
   - "Keep connection alive when the screen dims" (experimental) keeps re-sending the position to reduce drops after the iPhone locks.
   - "Re-pair" rebuilds a damaged pairing record over USB in one click.
@@ -254,6 +255,7 @@ With the Wi-Fi Tunnel, set Settings → Display & Brightness → Auto-Lock to **
 | --- | --- |
 | A dialog says the backend program is missing | Antivirus quarantined the unsigned backend exe. Add the install folder to the exclusion list and reinstall |
 | The tunnel starts but nothing connects | Make sure LocWarp runs as administrator, and try again with VPN or third-party firewall software turned off |
+| The iPhone did not connect because its Wi-Fi was turned on after LocWarp opened | Auto-connect only tries once, when LocWarp opens. With the iPhone's Wi-Fi on, press "Scan Wi-Fi devices" on the Connection tab |
 | Wi-Fi auto-detect finds no device | Check that both are on the same Wi-Fi subnet and that the router has no client or AP isolation. Entering the IP by hand also works |
 | `No such service: com.apple.instruments.dtservicehub`, or "No DDI detected" | Mount the DDI as described in [step 4](#4-mount-the-developer-disk-image-ios-17). If it still fails, turn Developer Mode off, reboot, turn it back on, and mount again |
 | Developer Mode is missing from the iPhone Settings | With the device connected, open the Settings tab at the top of LocWarp and press "Enable Developer Mode", then close and reopen the iPhone Settings app as described in [step 3](#3-turn-on-developer-mode). If the button does not work, use the [sideloading fallback](#appendix-revealing-developer-mode-by-sideloading) |

@@ -127,18 +127,29 @@ export const wifiConnect = (ip: string) => request<any>('POST', '/api/device/wif
 export const wifiScan = () => request<any[]>('GET', '/api/device/wifi/scan')
 // ports: extra RemotePairing port candidates the backend walks if `port` is
 // stale. iOS re-picks the port on every boot, so a remembered one often is.
-export const wifiTunnelStartAndConnect = (ip: string, port = 49152, udid?: string, ports?: number[]) =>
+// skipConnected: a phone already connected (USB or WiFi) answers
+// `{ status: 'already_connected', udid }` and is left alone.
+export const wifiTunnelStartAndConnect = (
+  ip: string, port = 49152, udid?: string, ports?: number[], skipConnected = false,
+) =>
   request<any>('POST', '/api/device/wifi/tunnel/start-and-connect', {
     ip, port,
     ...(udid ? { udid } : {}),
     ...(ports && ports.length ? { ports } : {}),
+    ...(skipConnected ? { skip_connected: true } : {}),
   })
-export interface TunnelInfo { udid: string; rsd_address?: string; rsd_port?: number; interface?: string; protocol?: string }
+// target_ip / target_port: the phone's LAN address the tunnel was opened to.
+// Only /wifi/tunnel/status fills them; tunnels built locally from a connect
+// response or a tunnel_recovered event don't carry them.
+export interface TunnelInfo {
+  udid: string; rsd_address?: string; rsd_port?: number; interface?: string; protocol?: string
+  target_ip?: string; target_port?: number
+}
 export const wifiTunnelStatus = () =>
   request<{ tunnels: TunnelInfo[]; running: boolean; rsd_address?: string; rsd_port?: number }>(
     'GET', '/api/device/wifi/tunnel/status',
   )
-export const wifiTunnelDiscover = () => request<{ devices: { ip: string; port: number; ports?: number[]; host: string; name: string }[] }>('GET', '/api/device/wifi/tunnel/discover')
+export const wifiTunnelDiscover = () => request<{ devices: { ip: string; port: number; ports?: number[]; host: string; name: string; method?: 'mdns' | 'tcp_scan' }[] }>('GET', '/api/device/wifi/tunnel/discover')
 export const wifiTunnelFindPort = (ip: string) =>
   request<{ ip: string; ports: number[] }>('POST', '/api/device/wifi/tunnel/find_port', { ip })
 // udid: stop one specific tunnel; omit to stop all (legacy stop-all)

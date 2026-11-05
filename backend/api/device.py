@@ -282,6 +282,11 @@ class WifiTunnelStartRequest(BaseModel):
     # remembered port goes stale constantly; /discover and /find_port now
     # hand back the whole open-port list and the start loop walks it.
     ports: list[int] | None = None
+    # start-and-connect only: leave a phone that is already connected (USB
+    # or WiFi) alone and answer "already_connected". Set by 自動連線 and
+    # WiFi 掃描; the manual WiFi panel leaves it off so it can still switch
+    # a USB phone to WiFi.
+    skip_connected: bool = False
 
 
 # Ports that sit inside the 49152-65535 dynamic range the scanner sweeps
@@ -1163,7 +1168,14 @@ async def wifi_tunnel_status():
     for udid, runner in list(_tunnels.items()):
         if not runner.is_running():
             continue
-        tunnels.append({"udid": udid, **(runner.info or {})})
+        tunnels.append({
+            "udid": udid,
+            **(runner.info or {}),
+            # The phone's LAN address the tunnel was opened to; rsd_address
+            # is the tunnel's own IPv6, which never matches a LAN IP.
+            "target_ip": runner.target_ip,
+            "target_port": runner.target_port,
+        })
 
     legacy = {"running": len(tunnels) > 0}
     if tunnels:
@@ -1305,6 +1317,17 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
         raise HTTPException(status_code=500, detail="Tunnel started but no RSD info available")
 
     dm = _dm()
+    # Must be decided here, on the UDID the tunnel resolved, not on the one
+    # connect_wifi_tunnel returns: by then it has already disconnected that
+    # UDID's USB link or WiFi engine.
+    if req.skip_connected and temp_key in dm._connections:
+        if tunnel_result.get("status") == "started":
+            # Opened only to learn who answers at this IP (e.g. a USB phone
+            # that is also on the WiFi). Close just the tunnel and keep the
+            # device connection, which _cleanup_wifi_connection_for would cut.
+            async with _tunnels_lock:
+                await _tear_down_tunnel(temp_key, caller="start_and_connect_skip_connected")
+        return {"status": "already_connected", "udid": temp_key}
     if len(dm._connections) >= MAX_DEVICES:
         raise HTTPException(
             status_code=409,

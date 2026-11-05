@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { describePipiError } from '../services/api';
 import type { PipiCookieResult, PipiKind, PipiStatusResponse } from '../services/api';
+import type { PipiFlowerFilter } from '../defaults';
 import { PIPI_MIN_ZOOM } from '../hooks/usePipiMushroomLayer';
 import type { PipiKinds, PipiLayerStatus } from '../hooks/usePipiMushroomLayer';
 
@@ -9,6 +10,8 @@ interface Props {
   onEnabledChange: (v: boolean) => void;
   kinds: PipiKinds;
   onKindsChange: (k: PipiKinds) => void;
+  flowerFilter: PipiFlowerFilter;
+  onFlowerFilterChange: (f: PipiFlowerFilter) => void;
   status: PipiLayerStatus;
   configured: boolean | null;
   cookieInfo: Pick<PipiStatusResponse, 'source' | 'updated_at'>;
@@ -25,6 +28,10 @@ const KIND_COLORS: Record<PipiKind, string> = {
   smoke: '#9aa3b2',
 };
 const KIND_ORDER: PipiKind[] = ['mushroom', 'flower', 'smoke'];
+const FLOWER_FILTER_ORDER: { key: keyof PipiFlowerFilter; label: string }[] = [
+  { key: 'ribbonOnly', label: 'map.pipi_flower_ribbon_only' },
+  { key: 'showCommon', label: 'map.pipi_flower_show_common' },
+];
 
 function clock(ms: number): string {
   const d = new Date(ms);
@@ -32,8 +39,8 @@ function clock(ms: number): string {
 }
 
 const PipiMushroomPanel: React.FC<Props> = ({
-  enabled, onEnabledChange, kinds, onKindsChange, status, configured, cookieInfo,
-  onRefresh, onSaveCookie, onClearCookie, onClose, t,
+  enabled, onEnabledChange, kinds, onKindsChange, flowerFilter, onFlowerFilterChange, status, configured,
+  cookieInfo, onRefresh, onSaveCookie, onClearCookie, onClose, t,
 }) => {
   const cookieBadge = !configured
     ? t('map.pipi_cookie_unset')
@@ -143,6 +150,25 @@ const PipiMushroomPanel: React.FC<Props> = ({
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: kinds[k] ? KIND_COLORS[k] : '#4a4f63' }} />
             {t(`map.pipi_kind_${k}`)}
           </button>
+        ))}
+      </div>
+
+      {/* Disabled while 花 is off, but the checked values are kept so turning 花 back on restores them. */}
+      <div style={{
+        display: 'flex', gap: 12, flexWrap: 'wrap', margin: '0 0 8px 4px', paddingLeft: 10,
+        borderLeft: `2px solid ${kinds.flower ? KIND_COLORS.flower : 'rgba(255,255,255,0.12)'}`,
+        fontSize: 11, color: kinds.flower ? '#c7d0e4' : '#5d6378',
+      }}>
+        {FLOWER_FILTER_ORDER.map(({ key, label }) => (
+          <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: kinds.flower ? 'pointer' : 'not-allowed' }}>
+            <input
+              type="checkbox"
+              checked={flowerFilter[key]}
+              disabled={!kinds.flower}
+              onChange={(e) => onFlowerFilterChange({ ...flowerFilter, [key]: e.target.checked })}
+            />
+            {t(label)}
+          </label>
         ))}
       </div>
 

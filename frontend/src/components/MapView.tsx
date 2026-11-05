@@ -12,7 +12,8 @@ import { parseCoord } from '../utils/coords';
 import Supercluster from 'supercluster';
 import { usePipiMushroomLayer } from '../hooks/usePipiMushroomLayer';
 import type { PipiKinds } from '../hooks/usePipiMushroomLayer';
-import { resolvePipiKinds } from '../defaults';
+import { resolvePipiFlowerFilter, resolvePipiKinds } from '../defaults';
+import type { PipiFlowerFilter } from '../defaults';
 import PipiMushroomPanel from './PipiMushroomPanel';
 
 // MapLibre's Leaflet binding looks up `window.maplibregl` rather than
@@ -426,6 +427,12 @@ const MapView: React.FC<MapViewProps> = ({
     catch { /* fall through to initial values */ }
     return resolvePipiKinds(stored);
   });
+  const [pipiFlowerFilter, setPipiFlowerFilter] = useState<PipiFlowerFilter>(() => {
+    let stored: string | null = null;
+    try { stored = localStorage.getItem('locwarp.pipi_flower_filter'); }
+    catch { /* fall through to initial values */ }
+    return resolvePipiFlowerFilter(stored);
+  });
   const [pipiPanelOpen, setPipiPanelOpen] = useState(false);
   useEffect(() => {
     try { localStorage.setItem('locwarp.pipi_enabled', pipiEnabled ? '1' : '0'); }
@@ -435,6 +442,10 @@ const MapView: React.FC<MapViewProps> = ({
     try { localStorage.setItem('locwarp.pipi_kinds', JSON.stringify(pipiKinds)); }
     catch { /* ignore */ }
   }, [pipiKinds]);
+  useEffect(() => {
+    try { localStorage.setItem('locwarp.pipi_flower_filter', JSON.stringify(pipiFlowerFilter)); }
+    catch { /* ignore */ }
+  }, [pipiFlowerFilter]);
 
   const [recentOpen, setRecentOpen] = useState(false);
   // Clear-button confirmation state. First click flips the single
@@ -2224,6 +2235,8 @@ const MapView: React.FC<MapViewProps> = ({
           onEnabledChange={setPipiEnabled}
           kinds={pipiKinds}
           onKindsChange={setPipiKinds}
+          flowerFilter={pipiFlowerFilter}
+          onFlowerFilterChange={setPipiFlowerFilter}
           status={pipi.status}
           configured={pipi.configured}
           cookieInfo={pipi.cookieInfo}

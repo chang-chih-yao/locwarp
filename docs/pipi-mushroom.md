@@ -132,7 +132,7 @@ are in `frontend/src/defaults.ts`.
   - Backs off by `retry_after` on 429.
 - **Backend:**
   - One upstream call at a time, at least 1 s apart.
-  - 30 s cache per viewport.
+  - 30 s cache per viewport. A hit adds the entry's age to `now_ms`, so it still reads as the server time at response.
   - `Retry-After` honoured (5–900 s).
   - No `items` call below zoom 14 or outside TW/HK/MA.
 

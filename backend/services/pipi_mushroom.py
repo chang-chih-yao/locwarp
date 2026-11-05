@@ -400,8 +400,14 @@ class PipiMushroomClient:
             return {"region": None, "items": [], "now_ms": int(time.time() * 1000), "truncated": False}
         key = (region, zoom, round(north, 4), round(south, 4), round(east, 4), round(west, 4))
         hit = self._cache.get(key)
-        if hit and time.monotonic() - hit[0] < CACHE_TTL:
-            return hit[1]
+        if hit:
+            cached_at, cached = hit
+            age = time.monotonic() - cached_at
+            if age < CACHE_TTL:
+                # now_ms is "server time at response", so age it by how long
+                # the entry has been cached. Return a copy: adding in place
+                # would accumulate across repeated hits on the same entry.
+                return {**cached, "now_ms": cached["now_ms"] + int(age * 1000)}
         j = await self.request(MAP_DATA_ENDPOINT, {
             "mode": "items", "regionCode": region, "zoom": zoom,
             "north": north, "south": south, "east": east, "west": west,

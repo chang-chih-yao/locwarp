@@ -1,6 +1,6 @@
 # 02 載入門檻改成 zoom 15（前後端）
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 
 Spec: `.scratch/pipi-zoom-threshold/spec.md`
@@ -69,3 +69,49 @@ Spec: `.scratch/pipi-zoom-threshold/spec.md`
 
 - 縮到門檻以下保留資料、狀態列規則、停止抓取時藏點位（票 03）。
 - marker 上限 1500 的截斷（`.scratch/pipi-max-markers/issues/01-marker-cap-silent-truncation.md`）。
+
+---
+
+2026-11-05：完成，commit `1bb3ec6`。
+
+- 前端 `PIPI_MIN_ZOOM` 與後端 `MIN_ITEMS_ZOOM` 都改成 15，三處註解都換成新理由。
+- 測試：
+  - 前端：原本「沒有紀錄時 zoom 15 要抓」那條改成門檻測試，寫死 zoom 14 是 `hide`、15 是 `fetch`，沒有 import 常數。所以測試仍是 12 條。
+  - 後端：新增 `tests/pipi/test_items_min_zoom.py`。
+    - 不需要換時間：每個 zoom 只呼叫一次，不會碰到快取。
+    - 除了票列的項目，另外斷言送出的 payload 是 `zoom=15`。
+- 前端測試檔開頭的說明改成「門檻測試寫死 14 和 15 兩邊」，沒有再寫「門檻以下一律用 13」。
+  - 票 03 會用 zoom 14 當門檻以下，原本那句到時候會變成錯的。
+- Mutation check（下列改法都有測試變紅，還原後全綠）：
+  - 前端門檻改回 14：門檻測試變紅。
+  - 前端 `<` 改 `<=`：門檻測試和另外 8 條（zoom 15 判成 `hide`）變紅。
+  - 後端 `MIN_ITEMS_ZOOM` 改回 14：zoom 14 那條變紅（沒有丟出 `pipi_zoom_too_low`）。
+  - 後端 `<` 改 `<=`：zoom 15 那條變紅（丟出 `pipi_zoom_too_low`）。
+- 文件：
+  - 「Items by zoom」實測表後面補了一句重測方式：`/api/pipi/items` 現在會自己拒絕 zoom 14，重測要直接呼叫 `PipiMushroomClient.request`。這是 code review 提出的。
+  - `rg` 掃過，剩下的 14 只出現在原站行為描述、實測表和測試裡。
+- 測試結果：
+  - 前端 `tests/frontend/*.ts`：48/48 pass，0 skipped。
+  - `npm run build`（含 tsc）：通過。
+  - `tests/pipi/` 五支都是 exit 0：`test_extension.js`、`test_cookie_header.py`、`test_api_cookie.py`、`test_cache_now_ms.py`、`test_items_min_zoom.py`。
+- 人工驗證（dev backend + vite，台北車站 25.0478, 121.5170，地圖 1660×945，只開「花」、普花不顯示）：
+  - 擴充功能推來的 cookie 是登入狀態，用的是原站真資料。
+  - 請求次數有兩邊佐證：
+    - 前端：在頁面裡包一層只記錄、不改回應的 `fetch`。
+    - 後端：dev backend 的 access log。
+    - 沒有看 DevTools Network。
+  - 直接打後端 zoom 14：回 400 `pipi_zoom_too_low`。
+    - log 裡緊接在後的兩筆原站請求是擴充功能推 cookie 時做的登入檢查。
+    - 那兩筆跟 `PUT /api/pipi/cookie` 是同一條連線，跟 curl 那條不同。
+  - zoom 14 的狀態列：「放大到 Zoom 15 以上才會載入 (目前 14)」；英文介面是「Zoom in to level 15+ to load (now 14)」。
+  - 在 zoom 14 平移 3 次、按「重新整理」，之後又停了約 80 秒（重新整理後第 60 秒那次強制更新也落在 zoom 14）：0 次 items 請求。
+  - 放大到 15：
+    - 700 ms 後送出 1 次（zoom=15），原站回應 1.7 秒。
+    - 約 2.5 秒畫出 1167 朵花。
+  - 15→14→15：
+    - 在 14 停 2 秒：0 次請求，0 個點位。
+    - 回到 15：711 ms 送出 1 次，直接畫出 1167 個點位，沒有先出現殘缺資料。
+    - 這次 34 ms 就回來，是命中後端 30 秒快取。
+  - 重新整理後第 120 秒的強制更新發生在 zoom 15，送出 1 次，屬正常行為。
+  - 後端 log 共 3 次前端發的 `GET /api/pipi/items`（zoom=15，全部 200），加上手動 curl 的那 1 次 zoom 14（400），沒有 429。
+- 版本號沒動。

@@ -28,9 +28,9 @@ const KIND_COLORS: Record<PipiKind, string> = {
   smoke: '#9aa3b2',
 };
 const KIND_ORDER: PipiKind[] = ['mushroom', 'flower', 'smoke'];
-const FLOWER_FILTER_ORDER: { key: keyof PipiFlowerFilter; label: string }[] = [
-  { key: 'ribbonOnly', label: 'map.pipi_flower_ribbon_only' },
-  { key: 'showCommon', label: 'map.pipi_flower_show_common' },
+const FLOWER_FILTER_ORDER: { key: keyof PipiFlowerFilter; labelKey: string }[] = [
+  { key: 'ribbonOnly', labelKey: 'map.pipi_flower_ribbon_only' },
+  { key: 'showCommon', labelKey: 'map.pipi_flower_show_common' },
 ];
 
 function clock(ms: number): string {
@@ -159,7 +159,7 @@ const PipiMushroomPanel: React.FC<Props> = ({
         borderLeft: `2px solid ${kinds.flower ? KIND_COLORS.flower : 'rgba(255,255,255,0.12)'}`,
         fontSize: 11, color: kinds.flower ? '#c7d0e4' : '#5d6378',
       }}>
-        {FLOWER_FILTER_ORDER.map(({ key, label }) => (
+        {FLOWER_FILTER_ORDER.map(({ key, labelKey }) => (
           <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: kinds.flower ? 'pointer' : 'not-allowed' }}>
             <input
               type="checkbox"
@@ -167,7 +167,7 @@ const PipiMushroomPanel: React.FC<Props> = ({
               disabled={!kinds.flower}
               onChange={(e) => onFlowerFilterChange({ ...flowerFilter, [key]: e.target.checked })}
             />
-            {t(label)}
+            {t(labelKey)}
           </label>
         ))}
       </div>

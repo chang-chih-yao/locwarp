@@ -293,7 +293,8 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, onT
       if (!kinds[kind]) continue;
       const end = endMs(it, kind);
       if (end && end <= now) continue;
-      // Every kind goes through it; mushrooms / smoke always pass.
+      // No `kind === 'flower'` guard here: letting mushrooms / smoke through
+      // is the module's job, so its tests are what lock it in.
       if (!passesFlowerFilter(it, flowerFilter, now)) continue;
       // Decided per rebuild only; prune never re-checks it.
       const ribbon = ribbonEndMs(it, now) !== null;

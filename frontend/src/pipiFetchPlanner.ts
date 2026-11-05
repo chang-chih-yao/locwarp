@@ -15,9 +15,11 @@ export interface PipiBox {
 
 export type PipiFetchDecision = 'hide' | 'reuse' | 'fetch';
 
-// Nothing is requested below this zoom (the site itself only shows county
-// clusters there). The backend's MIN_ITEMS_ZOOM is a separate copy.
-export const PIPI_MIN_ZOOM = 14;
+// Nothing is requested below this zoom. At zoom 14 the site's items API only
+// returns mushrooms and smoke ending within 5 minutes (no flowers); 15 is the
+// first zoom it answers in full (measured 2026-11-05, docs/pipi-mushroom.md).
+// The backend's MIN_ITEMS_ZOOM is a separate copy of the same number.
+export const PIPI_MIN_ZOOM = 15;
 
 // How long a fetch may be reused; also the hook's forced-refresh period.
 export const PIPI_FRESH_MS = 60_000;

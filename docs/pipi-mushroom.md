@@ -35,7 +35,10 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 4. `Handlers/MfMapData.ashx` modes: `filters`, `items`, `clusters`,
    `poi-report-candidates`. All of them need login and answer 401 otherwise.
    `items` takes `{regionCode, zoom, north, south, east, west}` and is only
-   used at zoom ≥ 14 (the site switches to clusters below). `regionCode` is
+   used at zoom ≥ 14 (the site switches to clusters below). At zoom 14 the
+   site's server only returns mushrooms and smoke ending within 5 minutes; it
+   returns the full data from zoom 15 (see "Items by zoom" below). The site's
+   own page draws everything only from zoom 16 (`mfMapDetailZoom`). `regionCode` is
    TW / HK / MA (Malaysia), using the same boxes as the site (`region_for`).
 5. `Handlers/MapData.ashx {mode: "allcategories"}` is public. The live smoke
    test uses it to prove the envelope still works.
@@ -43,6 +46,22 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
    stalls on the map page (Ctrl+F8 disables breakpoints). The page is
    `X-Frame-Options: DENY`, so it can't be embedded. The site sends
    `Retry-After` and `X-Pikmin-Rate-Limit-*` headers.
+
+Items by zoom (measured 2026-11-05 afternoon through the local backend):
+around Taipei Main Station (25.0478, 121.5170), assuming a 1400×850 map, with
+the bbox padded by 25% like the frontend does.
+
+| `zoom` sent | Query box | Site returned |
+| --- | --- | --- |
+| 14 | the zoom-14 view | 227–230 items: mushrooms 133–136, smoke 94, flowers 0; all ending within 5 minutes |
+| 15 | the same zoom-14 view | 5580 items: flowers 3500, mushrooms 1984, smoke 96 |
+| 14 | the zoom-15 view | 73 items, again only mushrooms and smoke ending within 5 minutes |
+| 15 | the zoom-15 view | 2191 items, 1578 of them flowers |
+
+The site goes by the request's `zoom`, not the size of the box. When the site
+changes, send one bbox at zoom 14 and at zoom 15 and compare them to recheck
+the threshold. `/api/pipi/items` now refuses zoom 14 itself, so call
+`PipiMushroomClient.request` directly with a logged-in cookie for that.
 
 Cookies the site sets are all `HttpOnly; Secure; SameSite=Lax`:
 `pm_site_session`, `PikminVisitor`, `ASP.NET_SessionId` (a session cookie),
@@ -122,20 +141,24 @@ are in `frontend/src/defaults.ts`.
 - The site fetches `items` with no filter and filters in the browser, so the
   sub-filters need no change to upstream requests.
 
-## Throttling (deliberate; keep it)
+## Throttling (deliberate; tighten only, never loosen)
 
 - **Frontend:**
   - 700 ms debounce after map moves.
   - A query box padded by 25%; no refetch while the view stays inside it.
   - 60 s refresh.
-  - At most 1500 markers.
+  - At most 1500 markers. This is LocWarp's own rendering cap, not a throttle
+    on the site, so tighten-only does not apply to it. Open bug: it cuts in
+    response order without telling the panel
+    (`.scratch/pipi-max-markers/issues/01-marker-cap-silent-truncation.md`).
   - Stops on `pipi_no_cookie`, `pipi_login_required` and `pipi_cookie_invalid`.
   - Backs off by `retry_after` on 429.
 - **Backend:**
   - One upstream call at a time, at least 1 s apart.
   - 30 s cache per viewport. A hit adds the entry's age to `now_ms`, so it still reads as the server time at response.
   - `Retry-After` honoured (5–900 s).
-  - No `items` call below zoom 14 or outside TW/HK/MA.
+  - No `items` call below zoom 15 or outside TW/HK/MA. The frontend's
+    `PIPI_MIN_ZOOM` is a separate copy of 15 and requests nothing below it either.
 
 ## Cookie: how it gets to LocWarp
 

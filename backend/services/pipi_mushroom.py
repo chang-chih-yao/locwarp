@@ -51,9 +51,12 @@ _USER_AGENT = (
     "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 )
 _TIMEOUT = httpx.Timeout(12.0, connect=5.0)
-# The site switches to county-level clusters at zoom <= 13; item queries
-# below that are refused here rather than sent upstream.
-MIN_ITEMS_ZOOM = 14
+# Item queries below this zoom are refused here rather than sent upstream.
+# At zoom 14 the site's items API only returns mushrooms and smoke ending
+# within 5 minutes (no flowers); 15 is the first zoom it answers in full
+# (measured 2026-11-05, docs/pipi-mushroom.md). The frontend's PIPI_MIN_ZOOM
+# is a separate copy of the same number.
+MIN_ITEMS_ZOOM = 15
 # Minimum spacing between upstream POSTs, and how long an identical
 # viewport query is served from memory.
 MIN_INTERVAL = 1.0

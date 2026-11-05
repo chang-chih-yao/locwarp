@@ -4,8 +4,7 @@
 // Locks when the 蘑菇地圖圖層 hides its markers, reuses the last fetch, or asks
 // the backend again. Zoom is hard-coded and the threshold constant is not
 // imported: if it went back to a lower zoom, these tests must go red with it.
-// "Below the threshold" is always 13 and "above" is 15 or more, so they hold
-// for a threshold of 14 or 15.
+// The threshold test pins both sides of it, 14 and 15.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPipiFetchPlanner } from '../../frontend/src/pipiFetchPlanner.ts';
@@ -18,8 +17,9 @@ const T0 = Date.UTC(2026, 10, 5, 6, 0, 0);
 const VIEW: PipiBox = { north: 25.06, south: 25.03, east: 121.54, west: 121.49 };
 const RECORDED: PipiBox = { north: 25.08, south: 25.01, east: 121.57, west: 121.46 };
 
-test('沒有抓取紀錄時，zoom 15 要抓', () => {
+test('載入門檻是 zoom 15：沒有抓取紀錄時 zoom 14 藏起來、zoom 15 要抓（原站在 zoom 14 只回 5 分鐘內結束的點位）', () => {
   const planner = createPipiFetchPlanner();
+  assert.equal(planner.plan({ zoom: 14, view: VIEW, now: T0, force: false }), 'hide');
   assert.equal(planner.plan({ zoom: 15, view: VIEW, now: T0, force: false }), 'fetch');
 });
 

@@ -17,7 +17,8 @@ import type { PipiBox } from '../pipiFetchPlanner';
 // for the viewport from the backend proxy and paints them as Leaflet markers.
 //
 // Request budget (the data comes from someone else's site):
-//   * nothing below zoom 14 (the site itself only shows county clusters there)
+//   * nothing below zoom 15 (at 14 the site only returns mushrooms and smoke
+//     ending within 5 minutes; 15 is the first zoom it answers in full)
 //   * one request per settled pan (debounced), skipped while the view is still
 //     inside the last fetched, padded bbox and that data is < 60 s old
 //   * one forced refresh per minute while the window is visible

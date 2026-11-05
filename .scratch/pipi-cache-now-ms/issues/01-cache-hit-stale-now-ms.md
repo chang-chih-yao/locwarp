@@ -1,6 +1,6 @@
 # 01 後端快取命中時回傳舊的 now_ms，前端把伺服器時間算慢最多 30 秒
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: bug
 
@@ -157,3 +157,15 @@ if hit and time.monotonic() - hit[0] < CACHE_TTL:
 - 改前端推算伺服器時間的方式。
 - 改 `region is None` 的路徑，它本來就用本機時間。
 - 改成存「原站時間減本機時間」的偏移、命中時用 `time.time()` 重算：本機時鐘一調整就會錯。
+
+---
+
+2026-11-05：完成，commit `555f98c`。
+
+- 修法照 brief：命中時把 tuple 拆成 `cached_at, cached`，經過時間只算一次（TTL 判斷和加到 `now_ms` 的是同一個值），回傳 `{**cached, "now_ms": cached["now_ms"] + int(age * 1000)}`。快取條目的形狀沒改。
+- 新增 `tests/pipi/test_cache_now_ms.py`，驗收的 4 個情境全綠。「其他欄位跟快取內容一樣」是把 `now_ms` 以外的整份拿去跟第一次的回應比對。
+- Mutation check：改回原樣回傳快取的 dict，「經過 23 秒」那條紅（差 0）；改成原地累加，「共 25 秒」那條紅（得到 +48000）；還原後全綠。
+- 既有測試：`test_extension.js`、`test_cookie_header.py`、`test_api_cookie.py` 都通過，前端 36/36 pass、0 skipped。
+- `docs/pipi-mushroom.md` 的 Throttling 補上一句。另外把新測試加進 `.claude/rules/pipi-mushroom.md` 的測試清單，這是 spec 外的配套。
+- 人工確認（30 秒內按兩次「重新整理」）**沒做**。
+- 版本號沒動。

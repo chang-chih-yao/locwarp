@@ -7,7 +7,7 @@ Google login on that site, so LocWarp proxies it with the user's browser
 cookie. A Chrome extension keeps that cookie in sync.
 
 Contracts for editing these files: `.claude/rules/pipi-mushroom.md`.
-Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`.
+Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/test_pipi_fetch_planner.ts`.
 
 ## Pieces
 
@@ -17,6 +17,7 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`.
 | API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items` |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
 | Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties |
+| Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). The layer only acts on its decision |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`: 普花 / 彩帶花 checks, the 花的子篩選, and the popup's 彩帶期 countdown (see Flowers below) |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |

@@ -10,6 +10,8 @@ import {
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
 import { fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
+import { PIPI_FRESH_MS, createPipiFetchPlanner } from '../pipiFetchPlanner';
+import type { PipiBox } from '../pipiFetchPlanner';
 
 // Pipi Mushroom 蘑菇地圖 overlay: fetches player-reported mushrooms / flowers
 // for the viewport from the backend proxy and paints them as Leaflet markers.
@@ -20,11 +22,10 @@ import { fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlow
 //     inside the last fetched, padded bbox and that data is < 60 s old
 //   * one forced refresh per minute while the window is visible
 //   * stop entirely on missing / expired cookie; back off on 429
+// The hide / reuse / fetch call is pipiFetchPlanner.ts'; this hook acts on it.
 // The backend adds its own 1 req/s spacing and a 30 s cache on top.
 
-export const PIPI_MIN_ZOOM = 14;
 const MOVE_DEBOUNCE_MS = 700;
-const REFRESH_MS = 60_000;
 const PRUNE_MS = 30_000;
 // Local-only poll of /api/pipi/status so a cookie pushed by the Chrome
 // extension (extensions/pipi-cookie-sync) is picked up without a click.
@@ -89,6 +90,10 @@ function fmtDuration(ms: number): string {
 function fmtClock(ms: number): string {
   const d = new Date(ms);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function toBox(b: L.LatLngBounds): PipiBox {
+  return { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() };
 }
 
 function kindOf(it: PipiItem): PipiKind {
@@ -208,26 +213,24 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
     let disposed = false;
     let stopped = false;
     let blockedUntil = 0;
-    let last: { bounds: L.LatLngBounds; at: number; zoom: number; truncated: boolean } | null = null;
+    const planner = createPipiFetchPlanner();
     let ctrl: AbortController | null = null;
     let debounce: number | undefined;
 
     const load = async (force: boolean) => {
       if (disposed || stopped || document.hidden) return;
       const zoom = Math.round(map.getZoom());
-      if (zoom < PIPI_MIN_ZOOM) {
+      const view = map.getBounds();
+      const decision = planner.plan({ zoom, view: toBox(view), now: Date.now(), force });
+      if (decision === 'hide') {
+        // The planner drops its record on hide too, so clearing the data here
+        // keeps the two in step. Never rebuild the planner here instead.
         ctrl?.abort();
-        last = null;
         setData(null);
         setStatus((s) => ({ ...s, phase: 'zoom', shown: 0, truncated: false, error: null, zoom }));
         return;
       }
-      if (Date.now() < blockedUntil) return;
-      const view = map.getBounds();
-      if (
-        !force && last && last.bounds.contains(view) && Date.now() - last.at < REFRESH_MS
-        && (!last.truncated || last.zoom === zoom)
-      ) return;
+      if (Date.now() < blockedUntil || decision === 'reuse') return;
       const padded = view.pad(BBOX_PAD);
       // Leaflet doesn't wrap longitude when the user pans across the
       // antimeridian; query the -180..180 equivalent and shift results back.
@@ -243,7 +246,7 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
           east: Math.min(180, wrapped.getEast()), west: Math.max(-180, wrapped.getWest()), zoom,
         }, c.signal);
         if (disposed || c.signal.aborted) return;
-        last = { bounds: padded, at: Date.now(), zoom, truncated: res.truncated };
+        planner.record({ bounds: toBox(padded), at: Date.now(), zoom, truncated: res.truncated });
         setData({ res, offset: res.now_ms - Date.now(), lngShift });
         setStatus((s) => ({
           ...s, phase: res.region ? 'ok' : 'region', truncated: res.truncated,
@@ -268,7 +271,7 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
     const onVisibility = () => { if (!document.hidden) void load(false); };
     map.on('moveend', onMove);
     document.addEventListener('visibilitychange', onVisibility);
-    const timer = window.setInterval(() => { void load(true); }, REFRESH_MS);
+    const timer = window.setInterval(() => { void load(true); }, PIPI_FRESH_MS);
     void load(false);
     return () => {
       disposed = true;

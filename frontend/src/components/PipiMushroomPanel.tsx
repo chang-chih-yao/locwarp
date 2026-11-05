@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { describePipiError } from '../services/api';
 import type { PipiCookieResult, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
-import { PIPI_MIN_ZOOM } from '../hooks/usePipiMushroomLayer';
+import { PIPI_MIN_ZOOM } from '../pipiFetchPlanner';
 import type { PipiKinds, PipiLayerStatus } from '../hooks/usePipiMushroomLayer';
 
 interface Props {

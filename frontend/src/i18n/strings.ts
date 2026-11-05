@@ -490,6 +490,8 @@ export const STRINGS = {
   'map.nearby_title': { zh: '附近 POI · 點擊瞬移', en: 'Nearby POIs · click to teleport' },
   'map.nearby_empty': { zh: '附近沒有已標註的 POI', en: 'No mapped POIs nearby' },
   'map.navigate_here': { zh: '導航到這裡', en: 'Navigate here' },
+  'map.pipi_fruit': { zh: '瞬移+撈水果', en: 'Teleport + fruit' },
+  'map.pipi_fruit_aborted': { zh: '撈水果已中止,瞬移結果:{results}', en: 'Teleport + fruit stopped. Teleport: {results}' },
   'map.add_waypoint': { zh: '添加路徑點', en: 'Add waypoint' },
   'map.add_bookmark': { zh: '加入座標收藏', en: 'Add to bookmarks' },
   'map.show_coords': { zh: '顯示座標', en: 'Show coordinates' },

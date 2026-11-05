@@ -1491,6 +1491,13 @@ textarea:focus {
   background: transparent;
 }
 
+.pipi-popup-fruit-row {
+  margin-top: 4px;
+}
+.pipi-popup-fruit-row .btn {
+  flex: 1;
+}
+
 /* ---------- Error Toast ---------- */
 .error-toast {
   position: fixed;

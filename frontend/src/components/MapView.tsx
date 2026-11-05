@@ -70,6 +70,8 @@ interface MapViewProps {
   onMapClick: (lat: number, lng: number) => void;
   onTeleport: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
   onNavigate: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
+  // 撈水果 from a 蘑菇地圖 flower's popup (GLOSSARY.md).
+  onPipiCollectFruit: (lat: number, lng: number) => void;
   onAddBookmark: (lat: number, lng: number) => void;
   onAddWaypoint?: (lat: number, lng: number) => void;
   // Left-click on a waypoint marker opens a small action menu. Both
@@ -266,6 +268,7 @@ const MapView: React.FC<MapViewProps> = ({
   onMapClick,
   onTeleport,
   onNavigate,
+  onPipiCollectFruit,
   onAddBookmark,
   onAddWaypoint,
   onSetWpAsStart,
@@ -1969,6 +1972,7 @@ const MapView: React.FC<MapViewProps> = ({
     markerSize: pipiMarkerSize,
     onTeleport,
     onNavigate,
+    onCollectFruit: onPipiCollectFruit,
     t,
   });
   const pipiConfiguredRef = useRef(pipi.configured);

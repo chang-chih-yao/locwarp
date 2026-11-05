@@ -81,6 +81,10 @@ function emptyRuntime(udid: string): DeviceRuntime {
 }
 
 // ── Fan-out helper ─────────────────────────────────────────────────────
+// Group mode: pause after teleporting every device, so they finish the
+// teleport before the next command arrives.
+export const GROUP_SETTLE_MS = 150
+
 export interface FanoutOutcome<T> {
   ok: Array<{ udid: string; value: T }>
   failed: Array<{ udid: string; reason: string }>
@@ -745,14 +749,15 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
     }
   }, [])
 
+  // `opts.straightLine` overrides the global toggle for this call only.
   const navigate = useCallback(
-    async (lat: number, lng: number) => {
+    async (lat: number, lng: number, opts?: { straightLine?: boolean }) => {
       setError(null)
       try {
         _setMode(SimMode.Navigate)
         setDestination({ lat, lng })
         setProgress(0)
-        const res = await api.navigate(lat, lng, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, undefined, straightLine, routeEngine)
+        const res = await api.navigate(lat, lng, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, undefined, opts?.straightLine ?? straightLine, routeEngine)
         setStatus((prev) => ({ ...prev, running: true, paused: false }))
         setEffectiveSpeed({ kmh: customSpeedKmh ?? MODE_SPEED_KMH[moveMode], min: speedMinKmh, max: speedMaxKmh })
         return res
@@ -1019,9 +1024,7 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
     if (!pos) return
     try {
       await Promise.allSettled(udids.map((u) => api.teleport(pos.lat, pos.lng, u)))
-      // Tiny settle delay so devices finalise the teleport before the next
-      // command arrives.
-      await new Promise((r) => setTimeout(r, 150))
+      await new Promise((r) => setTimeout(r, GROUP_SETTLE_MS))
     } catch {
       // Non-fatal: fall through to the primary action.
     }
@@ -1029,9 +1032,15 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
 
   const teleportAll = useCallback((udids: string[], lat: number, lng: number) =>
     fanout(udids, 'teleport', (u) => api.teleport(lat, lng, u)), [fanout])
-  const navigateAll = useCallback(async (udids: string[], lat: number, lng: number) => {
-    await preSyncStart(udids)
-    return fanout(udids, 'navigate', (u) => api.navigate(lat, lng, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, u, straightLine, routeEngine))
+  // `opts.skipPreSync`: the caller already put every device on a common
+  // start. preSyncStart reads the currentPosition of the render the caller
+  // was created in, which is the position before that teleport.
+  const navigateAll = useCallback(async (
+    udids: string[], lat: number, lng: number,
+    opts?: { straightLine?: boolean; skipPreSync?: boolean },
+  ) => {
+    if (!opts?.skipPreSync) await preSyncStart(udids)
+    return fanout(udids, 'navigate', (u) => api.navigate(lat, lng, moveMode, { speed_kmh: customSpeedKmh, speed_min_kmh: speedMinKmh, speed_max_kmh: speedMaxKmh }, u, opts?.straightLine ?? straightLine, routeEngine))
   }, [fanout, preSyncStart, moveMode, customSpeedKmh, speedMinKmh, speedMaxKmh, straightLine, routeEngine])
   const startLoopAll = useCallback(async (udids: string[], wps: LatLng[]) => {
     await preSyncStart(udids)

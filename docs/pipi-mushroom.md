@@ -2,12 +2,13 @@
 
 Map overlay showing the mushrooms, flowers and smoke points that
 [pipimushroom.com](https://pipimushroom.com/mfmap.aspx) (蘑菇地圖 tab) marks,
-with teleport / navigate buttons in each popup. The data needs the user's own
+with teleport / navigate buttons in each popup, plus 撈水果 on blooming
+flowers. The data needs the user's own
 Google login on that site, so LocWarp proxies it with the user's browser
 cookie. A Chrome extension keeps that cookie in sync.
 
 Contracts for editing these files: `.claude/rules/pipi-mushroom.md`.
-Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/test_pipi_fetch_planner.ts`, `tests/frontend/test_pipi_marker_selection.ts`.
+Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/test_pipi_fruit.ts`, `tests/frontend/test_pipi_fetch_planner.ts`, `tests/frontend/test_pipi_marker_selection.ts`.
 
 ## Pieces
 
@@ -19,7 +20,8 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 | Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties |
 | Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). The layer only acts on its decision |
 | Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
-| Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`: 普花 / 彩帶花 checks, the 花的子篩選, and the popup's 彩帶期 countdown (see Flowers below) |
+| Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 |
+| 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `App.tsx` `handleCollectFruit` supplies the single-device or group calls |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
 | Extension | `extensions/pipi-cookie-sync/` | pushes the browser's Cookie header to `127.0.0.1:8777` (user guide: its `README.md`) |
@@ -141,6 +143,58 @@ are in `frontend/src/defaults.ts`.
   two checkboxes reproduces it.
 - The site fetches `items` with no filter and filters in the browser, so the
   sub-filters need no change to upstream requests.
+
+## 撈水果: the 瞬移+撈水果 button (2026-11-05)
+
+Terms follow `GLOSSARY.md` (種花, 撈水果, 花農專用模式). Decisions and their
+Q numbers: `.scratch/pipi-fruit-approach/issues/01-popup-fruit-button.md`.
+
+**Why.** The game gives a flower's fruit only to a player who walks to it
+and 種花 on the way. Teleporting straight onto the flower leaves no trail,
+plants nothing and gets no fruit. So the button teleports next to the flower
+first, then walks onto it.
+
+**When it shows** (`canCollectFruit`): a flower that is not a 花苞 and has not
+wilted, checked with server time when the popup opens. Wilted means
+`wiltingMs` is set and `now ≥ wiltingMs`; an unset `wiltingMs` counts as not
+wilted. Prune runs every 30 s, so a flower that just wilted can
+still be on the map. Mushrooms and smoke never get the button. It sits on its
+own full-width row under the teleport / navigate pair.
+
+**The flow** (`runFruitApproach`):
+
+- **Start: 30 m due east, fixed.** No setting and no randomness, so every
+  run is the same. The ticket gives no reason for east over any other
+  direction; only being fixed matters. 30 m keeps the walk short and is also
+  the 花農專用模式's default radius. The offset is the same 111,320 m-per-degree formula as
+  `backend/core/flower.py` `_circle_points`, about 29.97 m by haversine.
+  Not yet checked on a phone: whether 30 m is enough for the game.
+- **Teleport, wait for it, then navigate to the flower.** Speed follows the
+  current move mode, custom speed and speed range, like 導航到這裡. There is
+  no extra wait for the game between the two (add one only if phone tests
+  show the game needs it).
+- **Always a straight line**, whatever the 直線 toggle and route engine say:
+  `straight_line=true` makes the backend skip the engine
+  (`force_straight` in `backend/services/route_service.py`). An engine
+  routes along roads, so it can detour or stop at the nearest road instead
+  of walking onto the flower.
+- **Any teleport failure stops everything.** Nothing navigates. In group mode
+  the devices that did teleport stay at the start; this is the user's call
+  (Q19), not "let the successful ones walk". Single-device errors show like
+  a normal teleport's. The cooldown only blocks a single device jumping
+  more than 1 km (`COOLDOWN_TABLE` is 0 s up to 1 km, and group mode skips it), so
+  collecting several flowers in one area isn't blocked.
+- **Group mode** teleports every device to the start, waits 150 ms (the
+  settle delay `preSyncStart` uses), then navigates them all with
+  `skipPreSync`. `preSyncStart` would read the `currentPosition` from before
+  the teleport and drag every device back. One toast only, because
+  `showToast` replaces the last one: an abort lists each device's teleport
+  result, a success shows the navigate result like 導航到這裡.
+- **Recent places** get the flower only (kind `navigate`), and only once a
+  device has started walking. The start point is never recorded.
+
+It is a one-off action, separate from the 花農專用模式 (`SimMode.Flower`),
+and uses none of its radius, lap or wait settings.
 
 ## Throttling (deliberate; tighten only, never loosen)
 

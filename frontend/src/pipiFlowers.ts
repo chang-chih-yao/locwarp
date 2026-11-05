@@ -63,6 +63,20 @@ export function fmtRibbonCountdown(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/**
+ * Whether the popup offers 撈水果 for the item: a flower that is not a 花苞
+ * and has not wilted at `nowMs`. Without a set `wiltingMs` it counts as not
+ * wilted.
+ *
+ * @param item a 蘑菇地圖 item of any kind.
+ * @param nowMs server-clock time in ms, as for {@link ribbonEndMs}.
+ */
+export function canCollectFruit(item: PipiItem, nowMs: number): boolean {
+  if (item.itemKind !== 'flower' || isBud(item)) return false;
+  const wilting = item.wiltingMs;
+  return !(isSetTime(wilting) && nowMs >= wilting);
+}
+
 /** Whether the item is 普花 (including its 花苞). */
 export function isCommonFlower(item: PipiItem): boolean {
   return COMMON_FLOWER_KEYS.has(item.key ?? '');

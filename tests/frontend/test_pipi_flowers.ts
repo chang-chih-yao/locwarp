@@ -2,12 +2,12 @@
 //   node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"
 //
 // Locks how 蘑菇地圖 flowers are classified and filtered (GLOSSARY.md: 花種,
-// 花苞, 普花, 彩帶花). Data follows the item format sampled from the items API
+// 花苞, 普花, 彩帶花, 撈水果). Data follows the item format sampled from the items API
 // on 2026-11-05; tests that need data the site has not been seen sending say
 // which upstream format change they guard against.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fmtRibbonCountdown, isCommonFlower, passesFlowerFilter, ribbonEndMs } from '../../frontend/src/pipiFlowers.ts';
+import { canCollectFruit, fmtRibbonCountdown, isCommonFlower, passesFlowerFilter, ribbonEndMs } from '../../frontend/src/pipiFlowers.ts';
 import type { PipiFlowerFilter } from '../../frontend/src/defaults.ts';
 import type { PipiItem } from '../../frontend/src/services/api.ts';
 
@@ -184,5 +184,37 @@ test('取消顯示普花時，四個普花花種的花苞也藏掉', () => {
     for (const state of ['Leaf', 'Bud']) {
       assert.equal(passesFlowerFilter(bud(key, name, state), hideCommon, NOW), false, `${key} ${state}`);
     }
+  }
+});
+
+// 撈水果 (GLOSSARY.md) is offered only for a flower that is not a 花苞 and has not wilted.
+test('盛開的花可以撈水果，同一朵花到了枯萎時間就不行', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵');
+  assert.equal(canCollectFruit(f, NOW), true);
+  assert.equal(canCollectFruit(f, f.wiltingMs! - 1), true);
+  assert.equal(canCollectFruit(f, f.wiltingMs!), false);
+  assert.equal(canCollectFruit(f, f.wiltingMs! + HOUR), false);
+});
+
+// Real 花苞 have wiltingMs 0, which already counts as "not wilted"; timedBud
+// carries a future wiltingMs too, so in both cases only the 花苞 rule rejects.
+test('花苞的三個階段（含 Pre-Flower 等寫法）都不能撈水果', () => {
+  for (const state of BUD_STATES) {
+    assert.equal(canCollectFruit(bud('f:White:Geranium', '白色天竺葵', state), NOW), false, `${state} 時間為 0`);
+    assert.equal(canCollectFruit(timedBud(state), NOW), false, `${state} 帶盛開時間`);
+  }
+});
+
+test('蘑菇與煙霧不能撈水果', () => {
+  assert.equal(canCollectFruit(MIXED.蘑菇, NOW), false);
+  assert.equal(canCollectFruit(MIXED.煙霧, NOW), false);
+});
+
+// "Wilted" needs a set wiltingMs. Not seen in the sample: these guard a
+// bloomed flower whose wiltingMs arrives as 0, missing or a string.
+test('原站若讓盛開的花沒有枯萎時間（0、沒給、字串），當作還沒枯萎，可以撈水果', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵');
+  for (const wiltingMs of [0, undefined, String(f.wiltingMs) as unknown as number]) {
+    assert.equal(canCollectFruit({ ...f, wiltingMs }, NOW), true, String(wiltingMs));
   }
 });

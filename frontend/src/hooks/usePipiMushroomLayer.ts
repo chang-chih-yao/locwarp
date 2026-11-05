@@ -9,7 +9,7 @@ import {
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
-import { fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
+import { canCollectFruit, fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 import { PIPI_FRESH_MS, createPipiFetchPlanner } from '../pipiFetchPlanner';
 import type { PipiBox } from '../pipiFetchPlanner';
 import { PIPI_MAX_MARKERS, selectPipiMarkers } from '../pipiMarkerSelection';
@@ -73,6 +73,8 @@ interface Options {
   markerSize: PipiMarkerSize;
   onTeleport: (lat: number, lng: number) => void;
   onNavigate: (lat: number, lng: number) => void;
+  /** 撈水果 (GLOSSARY.md), offered only by a flower that is not a 花苞 and has not wilted. */
+  onCollectFruit: (lat: number, lng: number) => void;
   t: TFn;
 }
 
@@ -131,6 +133,9 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
   // have ended since, and then the line is left out instead of going negative.
   const ribbonEnd = ribbonEndMs(it, now);
   const ribbonLine = ribbonEnd === null ? '' : t('map.pipi_ribbon_ends_in', { time: fmtRibbonCountdown(ribbonEnd - now) });
+  // Also an open-time check: prune only runs every 30 s, so a flower that
+  // wilted since is still on the map for a while.
+  const fruit = canCollectFruit(it, now);
   let timeLine = '';
   if (end && end > now) {
     timeLine = t('map.pipi_remaining', { time: fmtDuration(end - now) });
@@ -152,10 +157,15 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
       <button type="button" class="btn btn-primary" style="padding:5px 10px;" data-pipi-act="teleport">${escapeHtml(t('map.teleport_here'))}</button>
       <button type="button" class="btn btn-secondary" style="padding:5px 10px;" data-pipi-act="navigate">${escapeHtml(t('map.navigate_here'))}</button>
     </div>
+    ${fruit ? `<div class="map-popup-actions pipi-popup-fruit-row">
+      <button type="button" class="btn btn-secondary" style="padding:5px 10px;" data-pipi-act="fruit">${escapeHtml(t('map.pipi_fruit'))}</button>
+    </div>` : ''}
   </div>`;
 }
 
-export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, markerSize, onTeleport, onNavigate, t }: Options) {
+export function usePipiMushroomLayer({
+  mapRef, enabled, kinds, flowerFilter, markerSize, onTeleport, onNavigate, onCollectFruit, t,
+}: Options) {
   // null = unknown (backend not reachable yet); we still try to load.
   const [configured, setConfigured] = useState<boolean | null>(null);
   // offset: server clock - local clock. lngShift: multiple of 360 that moves
@@ -177,10 +187,10 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
 
   const tRef = useRef(t);
   tRef.current = t;
-  const onTeleportRef = useRef(onTeleport);
-  onTeleportRef.current = onTeleport;
-  const onNavigateRef = useRef(onNavigate);
-  onNavigateRef.current = onNavigate;
+  // Popup buttons by data-pipi-act. Every act needs its own entry: an
+  // unmapped one does nothing (and logs) instead of falling back to a teleport.
+  const popupActionsRef = useRef<Record<string, (lat: number, lng: number) => void>>({});
+  popupActionsRef.current = { teleport: onTeleport, navigate: onNavigate, fruit: onCollectFruit };
   // Id of the item whose popup is open, so a data refresh can reopen it.
   const openIdRef = useRef<string | null>(null);
   const reopenIdRef = useRef<string | null>(null);
@@ -425,9 +435,14 @@ export function usePipiMushroomLayer({ mapRef, enabled, kinds, flowerFilter, mar
           btn.onclick = (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
+            const act = btn.dataset.pipiAct ?? '';
+            const actions = popupActionsRef.current;
+            if (!Object.prototype.hasOwnProperty.call(actions, act)) {
+              console.error(`[pipi] popup button with no handler: data-pipi-act="${act}"`);
+              return;
+            }
             map.closePopup();
-            const fn = btn.dataset.pipiAct === 'navigate' ? onNavigateRef.current : onTeleportRef.current;
-            fn(it.lat, it.lng);
+            actions[act](it.lat, it.lng);
           };
         });
       });

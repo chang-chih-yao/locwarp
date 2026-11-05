@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useT } from './i18n'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useDevice } from './hooks/useDevice'
-import { useSimulation } from './hooks/useSimulation'
+import { useSimulation, GROUP_SETTLE_MS } from './hooks/useSimulation'
 import { useJoystick } from './hooks/useJoystick'
 import { useBookmarks } from './hooks/useBookmarks'
 import UserAvatarPicker from './components/UserAvatarPicker'
@@ -23,6 +23,8 @@ import PauseControl from './components/PauseControl'
 import StatusBar from './components/StatusBar'
 import { DeviceChipRow } from './components/DeviceChipRow'
 import type { FanoutOutcome } from './hooks/useSimulation'
+import { runFruitApproach } from './pipiFruit'
+import type { FruitTeleportOutcome } from './pipiFruit'
 
 // Summarise a group fan-out result into a single toast string.
 // Call from action handlers: showToast(toastForFanout(t, 'teleport', outcome, connectedDevices))
@@ -36,12 +38,16 @@ export function toastForFanout<T>(
   if (total === 0) return action
   if (outcome.failed.length === 0) return t('group.action_all_success', { action })
   if (outcome.ok.length === 0) return t('group.action_all_failed', { action })
+  return `${action}: ${fanoutStatusList(outcome, devices)}`
+}
+
+// Each device's result, lettered by connection order: "A OK, B <reason>".
+function fanoutStatusList(outcome: FanoutOutcome<unknown>, devices: { udid: string }[]): string {
   const statusFor = (udid: string) =>
     outcome.ok.some((o) => o.udid === udid) ? 'OK'
       : outcome.failed.find((f) => f.udid === udid)?.reason ?? 'error'
   const letters = ['A', 'B', 'C']
-  const parts = devices.slice(0, 3).map((d, i) => `${letters[i]} ${statusFor(d.udid)}`)
-  return `${action}: ${parts.join(', ')}`
+  return devices.slice(0, 3).map((d, i) => `${letters[i]} ${statusFor(d.udid)}`).join(', ')
 }
 
 import { SimMode, MoveMode } from './hooks/useSimulation'
@@ -700,6 +706,52 @@ const App: React.FC = () => {
       sim.navigate(lat, lng)
     }
     void pushRecent(lat, lng, source === 'coord' ? 'coord_navigate' : 'navigate')
+  }, [sim, device, t, showToast, pushRecent])
+
+  // 撈水果 (GLOSSARY.md) from a 蘑菇地圖 flower's popup: teleport 30 m east,
+  // then walk straight onto the flower. Recent places get the flower only,
+  // and only once some device has started walking.
+  const handleCollectFruit = useCallback(async (latIn: number, lngIn: number) => {
+    const flower = { lat: clampLat(latIn), lng: normalizeLng(lngIn) }
+    setPreviewPin(null)
+    const devices = device.connectedDevices
+    const udids = devices.map((d) => d.udid)
+    if (udids.length >= 2) {
+      const r = await runFruitApproach(flower, {
+        teleport: (lat, lng) => {
+          sim.setCurrentPosition({ lat, lng })
+          return sim.teleportAll(udids, lat, lng)
+        },
+        navigate: async (lat, lng, opts) => {
+          // skipPreSync also skips preSyncStart's settle delay, so wait here.
+          await new Promise((res) => setTimeout(res, GROUP_SETTLE_MS))
+          return sim.navigateAll(udids, lat, lng, opts)
+        },
+      })
+      // One toast only: showToast replaces the previous one.
+      showToast(r.aborted
+        ? t('map.pipi_fruit_aborted', { results: fanoutStatusList(r.teleport, devices) })
+        : toastForFanout(t, t('mode.navigate'), r.navigate, devices))
+      if (!r.aborted && r.navigate.ok.length > 0) void pushRecent(flower.lat, flower.lng, 'navigate')
+      return
+    }
+    // sim.teleport / sim.navigate already show their errors; here they only
+    // decide whether the flow goes on.
+    const udid = udids[0] ?? ''
+    try {
+      const r = await runFruitApproach(flower, {
+        teleport: async (lat, lng): Promise<FruitTeleportOutcome> => {
+          try {
+            await sim.teleport(lat, lng)
+            return { ok: [{ udid }], failed: [] }
+          } catch (e) {
+            return { ok: [], failed: [{ udid, reason: (e as Error)?.message ?? String(e) }] }
+          }
+        },
+        navigate: (lat, lng, opts) => sim.navigate(lat, lng, opts),
+      })
+      if (!r.aborted) void pushRecent(flower.lat, flower.lng, 'navigate')
+    } catch { /* navigate failed */ }
   }, [sim, device, t, showToast, pushRecent])
 
   const [addBmDialog, setAddBmDialog] = useState<{
@@ -2380,6 +2432,7 @@ const App: React.FC = () => {
           onMapClick={handleMapClick}
           onTeleport={handleTeleport}
           onNavigate={handleNavigate}
+          onPipiCollectFruit={handleCollectFruit}
           onAddBookmark={handleAddBookmark}
           onAddWaypoint={handleAddWaypoint}
           onSetWpAsStart={handleSetWpAsStart}

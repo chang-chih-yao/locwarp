@@ -1,6 +1,6 @@
 # 蘑菇地圖：載入門檻改成 zoom 15，縮到門檻以下時保留資料
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

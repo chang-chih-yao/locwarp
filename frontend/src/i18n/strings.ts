@@ -381,6 +381,8 @@ export const STRINGS = {
   'map.pipi_kind_mushroom': { zh: '蘑菇', en: 'Mushrooms' },
   'map.pipi_kind_flower': { zh: '花', en: 'Flowers' },
   'map.pipi_kind_smoke': { zh: '煙霧', en: 'Smoke' },
+  'map.pipi_flower_ribbon_only': { zh: '只顯示彩帶', en: 'Ribbon flowers only' },
+  'map.pipi_flower_show_common': { zh: '顯示普花', en: 'Show common flowers' },
   'map.pipi_status_off': { zh: '圖層已關閉', en: 'Layer is off' },
   'map.pipi_status_loading': { zh: '載入中…', en: 'Loading…' },
   'map.pipi_status_ok': { zh: '顯示 {count} 筆 · {time} 更新', en: 'Showing {count} · updated {time}' },

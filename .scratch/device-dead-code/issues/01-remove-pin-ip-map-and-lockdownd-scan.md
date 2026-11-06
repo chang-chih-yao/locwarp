@@ -11,7 +11,7 @@ Type: task
 
 - `pin_ip_map` 的註解說，開啟 LocWarp 時的自動連線靠它挑出釘選的裝置。其實沒有任何地方讀它。
 - 舊的 lockdownd 掃描叫 `scanWifi`、`wifiScan`、`/wifi/scan`，跟「掃描 WiFi 裝置」按鈕（GLOSSARY：裝置連線）同名，做的卻是另一件事。
-- 舊的 WiFi 直連叫 `connectWifi`、`wifiConnect`，看起來像 WiFi 的連線入口。其實它打的後端路由早就拿掉了，真的呼叫只會失敗，而且請求會落到別的路由。
+- 舊的 WiFi 直連叫 `connectWifi`、`wifiConnect`，看起來像 WiFi 的連線入口。其實它打的後端路由早就拿掉了，真的呼叫只會失敗，而且請求會落到別的路由。WiFi 面板舊分頁的 i18n 字串也一樣沒有人用。
 
 拿掉之後行為不變。
 
@@ -99,12 +99,20 @@ Type: task
   - `onWifiConnect` prop 的宣告（`:38`）和解構（`:65`）。
   - `:680` 的 `(onStartWifiTunnel || onWifiConnect) &&` 改成 `onStartWifiTunnel &&`。`App.tsx:1578` 一定會傳 `onStartWifiTunnel`，所以行為不變。
   - `:679` 的註解「collapsible with iOS version tabs」說的是 v0.1.49 拿掉的分頁，改成符合現況，只說這一段可以收合。
+- `frontend/src/i18n/strings.ts` 裡沒有人用的三個分頁字串：
+  - `wifi.tab_ios17minus`（`:277`）和 `wifi.legacy_unavailable`（`:804`）：v0.1.49 拿掉「iOS 17 以下」分頁時，`DeviceStatus` 裡用到它們的 `t(...)` 一起拿掉了，字串卻留了下來。
+  - `wifi.tab_ios17plus`（`:276`）：同一組分頁的另一個標籤，來源跟上面兩個不同。它在 v0.1.23（`6a1ed55`）加進來之後就沒有被引用過，不是 v0.1.49 留下的。
+  - 也查過用變數組出 key 的寫法，同樣沒有地方用到這三個字串。
 
 要留：
 
 - `connectWifi` 裡用到的 `setConnectedDevice`、`setDevices`、`DeviceInfo`：其他地方還在用。
 - 後端兩段「v0.1.49 已拿掉」的註解：`backend/api/device.py:20` 和 `backend/core/device_manager.py:655-656`。它們寫的是後端為什麼沒有這個路由、這個方法，跟前端這次清掉的程式碼無關。
 - `DeviceManager.connect_wifi_tunnel`，以及 `tests/device/test_wifi_skip_connected.py` 的同名假方法：這是 iOS 17 以後的 WiFi 通道在用，只是名字開頭一樣。
+- `DeviceStatus.tsx:224` 的註解「WiFi tunnel remains iOS 17+ only; iOS 16 devices are supported over USB.」是對的，不要動：
+  - v0.1.49 拿掉了 iOS 16 支援。隔天的 `d512094`（iOS 16.x support via LegacyLocationService）讓 iOS 16 改走 USB、重新支援，這行註解就是那次加的。
+  - 現在後端的 `MIN_VERSION = "16.0"`（`device_manager.py:51`），`DeviceStatus.tsx:600` 也寫著 iOS 16 有支援。
+  - 這一節講的都是 v0.1.49 拿掉的東西，很容易誤以為這行也過時了。
 
 ## 驗收
 
@@ -116,6 +124,7 @@ Type: task
   - `wifiScan` 要加 `-w` 整字比對，才不會搜到新按鈕的 `wifiScanning`、`wifiScanDisabled`。
   - `scan_wifi_devices`、`_load_pair_record`、`_guess_local_subnet`、`create_using_tcp`
   - `connectWifi`、`wifiConnect`、`onWifiConnect`。`findAndConnectWifi` 要留。
+  - `tab_ios17minus`、`tab_ios17plus`、`legacy_unavailable`
   - `useDevice.ts` 裡也不能再有 `wifiScanning`。`DeviceStatus.tsx` 的那個要留。
 - 以下名稱只能剩指定的那一處：
   - `wifi/connect` 只能剩 `backend/api/device.py:20` 那行註解。
@@ -163,3 +172,6 @@ Type: task
   - Commit：`:612` 那行也是兩節都會改；拿掉「方便個別 revert」，改成每個 commit 單獨 build 都要過。
   - 確認 404 之前，先確認回應的是 dev 後端，不是同樣用 8777 的安裝版。
   - 修訂時另外發現（review 沒提到）：在 Git Bash 跑 `git grep -e /wifi/scan`、`-e /wifi/connect` 會被轉成 Windows 路徑，什麼都搜不到。搜尋詞改成不加開頭的 `/`，搜到的行跟 `MSYS_NO_PATHCONV=1` 時一樣。
+- 2026-11-06：使用者決定再併進第 3 節：
+  - `wifi.tab_ios17minus`、`wifi.legacy_unavailable`、`wifi.tab_ios17plus` 三個沒有人用的 i18n 字串。原本只提了前兩個，`tab_ios17plus` 是查的時候另外發現的，使用者同意一起拿掉。
+  - 「要留」加上 `DeviceStatus.tsx:224` 的註解。我原本以為它過時、提議改掉，往後查 git 歷史才發現 `d512094` 讓 iOS 16 改走 USB、重新支援，所以這行是對的。寫進「要留」，避免做清理的人犯同樣的錯。

@@ -224,7 +224,7 @@ Type: task
   - M2：把第 3 節那行 `await broadcast("ddi_not_mounted", ...)` 換成 `pass`。新測試要失敗，(b) 不能印 `ok`。
   - 兩項的結果都記到 Comments。
 - 現有測試都要過，而且 0 skipped：
-  - 前端：`tests/frontend/` 用 `node --test` 跑。
+  - 前端：在 repo 根目錄跑 `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"`（`tests/frontend/test_defaults.ts` 開頭寫的跑法）。
   - 後端：`tests/device/` 四支（含新的一支）、`tests/launcher/` 一支、`tests/pipi/` 的 `test_*.py`，加上 `node tests/pipi/test_extension.js`。
   - `tests/pipi/check_live_anonymous.py` 會連到真網站，不用跑，但要寫明沒跑。
 - 人工核對 grep 驗不到的：
@@ -377,3 +377,24 @@ Type: task
       - 新測試的情境用 `# a)`、`# b)`，既有測試用 `# 1)`：照第 5 節的 (a)、(b)，`FakeMounter` 的 docstring 也是這樣指。
   - 範圍外、沒修：除了上面的判斷題，沒有新發現。「不做」的各項維持原樣。
   - 04、05 號票都是 `Blocked by: 03`，現在解除封鎖。兩張的行號、舊函式名 `_ensure_personalized_ddi_mounted` 和 05 號票說的 `device_manager.py:513` 的 `hint`，都是開票時（`933d910`、`b21190c`）的紀錄，現在已經不是這樣。兩張都寫了以內容為準，所以沒改，triage 時再對一次。
+- 2026-11-07：另一個 session 審了實作（`c655e91..cefd8fa`，5 個 commit；`cefd8fa` 補內文後是 `8178329`）。Spec 0 項。Standards 沒有違規，全是判斷題；Spec 另外指出驗收有一處筆誤。我逐條對過，重現了測試那點，下面列出要處理的 6 點，採納 4 項：
+  - 採納：
+    - (a) 沒檢查「DVT 失敗」這個前提有沒有真的發生：`0d45549`。
+      - 重現了兩種情況，原本的測試照樣印 `all ok`：
+        - 在 DVT 的 `try` 前面直接 `return LegacyLocationService(...)`。
+        - `core.device_manager.DvtProvider` 的替換沒打到。真的 `DvtProvider` 吃到 `FakeLockdown`，會因為沒有 `product_version` 在同一個 `try` 裡失敗，照樣退回 Legacy。
+      - `FakeDvtProvider.__aenter__` 每次被開都記一筆，(a) 先斷言有記到。仍然只有 (a)、(b) 兩項檢查，第 5 節「兩項檢查」沒變。
+      - 驗證：
+        - 現在的程式碼和重構前的 `c655e91` 都印 `all ok`。
+        - 上面兩種情況都在新斷言失敗，結束碼 1。
+        - M1 還是讓 (a) 失敗，M2 還是讓 (b) 失敗。
+    - `_create_dvt_location_service` 的名字：開成 06 號票（`.scratch/device-dead-code/issues/06-create-dvt-location-service-name.md`），`needs-triage`。
+      - 兩個 session 的 Standards review 都提了這點。上一筆把它記成「沒改」，理由寫在 06 號票的做法 A，要不要改名由 triage 決定。
+    - 結果 commit 沒有內文：01、02 號票「記下實作結果」的 commit 都有條列內文。
+      - 那個 commit 是 HEAD，還沒 push，所以用 `--amend` 補上內文，內容不變：`cefd8fa` 變成 `8178329`，`git diff cefd8fa 8178329` 是空的。
+    - 驗收的「`tests/frontend/` 用 `node --test` 跑」照字面跑會失敗（Node 24 回 `✖ tests\frontend`）。改成 `test_defaults.ts` 開頭寫的指令，上一筆的 95/95 就是用這條跑的。
+      - 01、02 號票的驗收也是同樣的寫法，已經 resolved，沒改。
+  - 不採納：
+    - `_check_personalized_ddi_mounted` 不回傳結果、卻會廣播事件，跟「check」的預期不同：這個名字是「定案」第 4 節使用者定的，不重開。06 號票「看過、沒列入」記了一筆。
+    - 三處 `broadcast` 的 `try/except` 包法一樣：第 3 節規定外面的 `try/except` 要留著，跟另外兩處一樣。06 號票「看過、沒列入」記了一筆。
+  - 改完重跑：前端 95/95（0 skipped）、`tests/device` 4 支、`tests/launcher` 1 支、`tests/pipi` 4 支 `test_*.py`、`test_extension.js`，結束碼都是 0。`check_live_anonymous.py` 會連到真網站，沒跑。

@@ -360,10 +360,10 @@ export const STRINGS = {
   'wifi.legacy_hint': { zh: 'iPhone 解鎖並已配對即可直接連線。', en: 'iPhone unlocked and paired, connect directly.' },
   'wifi.device_not_detected': { zh: '未偵測到裝置,請確認 iPhone 與電腦在同一 WiFi', en: 'Device not detected, ensure iPhone and computer are on the same Wi-Fi' },
   'wifi.detect_failed': { zh: '偵測失敗', en: 'Detection failed' },
-  'wifi.autoconnect_label': { zh: '開啟 LocWarp 時自動連線', en: 'Auto-connect when LocWarp opens' },
+  'wifi.autoconnect_label': { zh: '開啟 LocWarp 時自動連線', en: 'Auto-connect on launch' },
   'wifi.autoconnect_tooltip': {
     zh: '開啟 LocWarp 時試一次,替同網段還沒連上的 iPhone 建立 WiFi 連線,已連上的裝置不受影響。有釘選時只試釘選裝置上次的 IP;沒有釘選時會搜尋整個網段,連過的 IP 優先。之後要補連請按「掃描 WiFi 裝置」',
-    en: "Tries once when LocWarp opens: starts a Wi-Fi connection to each iPhone on this network that isn't connected yet, leaving connected devices alone. With pinned devices, only their last IPs are tried; without pins, the whole network is searched, previously used IPs first. To connect one later, press 'Scan Wi-Fi devices'.",
+    en: "Tries once at launch to connect every iPhone on this network that isn't connected yet (only pinned ones, if any are pinned). To connect one later, press 'Scan Wi-Fi devices'.",
   },
   'panel.waypoints_set_as_start': { zh: '設為起點並飛過去(從這裡開始巡迴)', en: 'Set as start and fly here (loop begins from this point)' },
   'panel.waypoints_set_as_start_short': { zh: '起點', en: 'Start' },

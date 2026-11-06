@@ -273,8 +273,6 @@ export const STRINGS = {
   'wifi.repair_failed': { zh: '配對失敗', en: 'Pairing failed' },
   'wifi.repair_cancel': { zh: '取消', en: 'Cancel' },
   'wifi.repair_ok': { zh: '開始配對', en: 'Start pairing' },
-  'wifi.tab_ios17plus': { zh: 'iOS 17+', en: 'iOS 17+' },
-  'wifi.tab_ios17minus': { zh: 'iOS 17 以下', en: 'iOS 17 and below' },
   'wifi.help_ip': { zh: '如何找 IP?', en: 'How to find IP?' },
   'wifi.detect': { zh: '自動偵測', en: 'Auto-detect' },
   'wifi.detect_scanning': { zh: '偵測中', en: 'Detecting' },
@@ -801,7 +799,6 @@ export const STRINGS = {
   'device.connect_failed': { zh: '連線失敗', en: 'Connection failed' },
   'wifi.tunnel_lost_banner': { zh: 'WiFi Tunnel 連線中斷,請重新建立', en: 'Wi-Fi tunnel dropped, please reconnect' },
   'wifi.tunnel_lost_banner_named': { zh: '{name} 的 WiFi Tunnel 中斷,請重新建立', en: "{name}'s Wi-Fi tunnel dropped, please reconnect" },
-  'wifi.legacy_unavailable': { zh: 'iOS 17 以下連線方式目前不可用。', en: 'iOS 17 and below connection mode is not available.' },
 
   // ── Map extras ──────────────────────────────
   'map.destination': { zh: '目的地', en: 'Destination' },

@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   listDevices, connectDevice, disconnectDevice,
-  wifiConnect,
   wifiTunnelStartAndConnect, wifiTunnelStatus, wifiTunnelStop, wifiTunnelDiscover,
   type TunnelInfo,
 } from '../services/api'
@@ -214,31 +213,6 @@ export function useDevice(subscribe?: WsSubscribe) {
         setTunnels((prev) => prev.filter((tn) => tn.udid !== udid))
       } catch (err) {
         console.error('Failed to disconnect device:', err)
-        throw err
-      }
-    },
-    [],
-  )
-
-  const connectWifi = useCallback(
-    async (ip: string) => {
-      try {
-        const res = await wifiConnect(ip)
-        const info: DeviceInfo = {
-          udid: res.udid,
-          name: res.name,
-          ios_version: res.ios_version,
-          connection_type: 'Network',
-          is_connected: true,
-        }
-        setConnectedDevice(info)
-        setDevices((prev) => {
-          const filtered = prev.filter((d) => d.udid !== info.udid)
-          return [...filtered, info]
-        })
-        return info
-      } catch (err) {
-        console.error('WiFi connect failed:', err)
         throw err
       }
     },
@@ -550,7 +524,6 @@ export function useDevice(subscribe?: WsSubscribe) {
 
   return {
     devices, connectedDevice, scanning, scan, connect, disconnect,
-    connectWifi,
     startWifiTunnel, findAndConnectWifi, checkTunnelStatus, stopTunnel, tunnelStatus, tunnels,
     connectedDevices, primaryDevice,
     pinnedUdids, togglePin,

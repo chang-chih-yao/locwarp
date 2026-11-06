@@ -35,7 +35,6 @@ interface DeviceStatusProps {
   onStopTunnel?: (udid?: string) => Promise<void>;
   tunnelStatus?: TunnelStatus;
   tunnels?: TunnelInfo[];
-  onWifiConnect?: (ip: string) => Promise<any>;
   pinnedUdids?: string[];
   onTogglePin?: (udid: string) => void;
   /** Connected devices, USB and WiFi; `Device` carries no connected flag. */
@@ -62,7 +61,6 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   onStopTunnel,
   tunnelStatus = { running: false },
   tunnels = [],
-  onWifiConnect,
   pinnedUdids = [],
   onTogglePin,
   connectedCount = 0,
@@ -676,8 +674,8 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
         </div>
       )}
 
-      {/* WiFi Connection Section — collapsible with iOS version tabs */}
-      {(onStartWifiTunnel || onWifiConnect) && (
+      {/* WiFi Connection Section — collapsible */}
+      {onStartWifiTunnel && (
         <div style={{ borderTop: '1px solid #333', paddingTop: 8, marginTop: 4 }}>
           {/* Collapsible header */}
           <button

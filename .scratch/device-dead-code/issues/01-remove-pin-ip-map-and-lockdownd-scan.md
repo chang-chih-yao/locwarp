@@ -3,7 +3,7 @@
 Status: ready-for-agent
 Blocked by: (none)
 Type: task
-相關：`.scratch/wifi-scan-button/issues/01-wifi-scan-button.md`。兩件事都是在那張票發現，記成待清理。
+相關：`.scratch/wifi-scan-button/issues/01-wifi-scan-button.md`。第 1、2 節是在那張票發現、記成待清理的。第 3 節是開這張票時另外發現，使用者決定併進來。
 
 ## 為什麼
 
@@ -77,10 +77,11 @@ Type: task
 
 現況：
 
-- v0.1.49 拿掉 iOS 17 以前的 WiFi 直連時，只拿掉了後端，前端的呼叫留了下來。
-  - 後端的 `/wifi/connect` 路由和 `DeviceManager.connect_wifi` 都已經不在了。
-  - 前端還留著 `connectWifi` 和 `api.wifiConnect`。
-- 沒有任何畫面呼叫 `connectWifi`。
+- v0.1.49（`91c4f7f`）拿掉 iOS 17 以前的 WiFi 直連時，拿掉了：
+  - 後端的 `/wifi/connect` 路由和 `DeviceManager.connect_wifi`。
+  - 前端 WiFi 面板的「iOS 17 以下」分頁，以及 `App.tsx` 傳給 `DeviceStatus` 的 `onWifiConnect={device.connectWifi}`。
+- 留下來的有 hook 的 `connectWifi`、API 函式 `wifiConnect`，和 `DeviceStatus` 的 `onWifiConnect` prop。
+- 沒有地方呼叫 `connectWifi`，也沒有地方傳 `onWifiConnect`。用到 `DeviceStatus` 的只有 `App.tsx:1560` 這一處。
 - 真的呼叫的話不會回 404：
   - `POST /api/device/wifi/connect` 會對上 `POST /{udid}/connect`（`backend/api/device.py:1641`），`udid` 變成 `"wifi"`。
   - 後端會去連 UDID 是 `wifi` 的裝置，找不到就回錯誤，`connectWifi` 再把錯誤往上拋。
@@ -94,6 +95,10 @@ Type: task
   - `connectWifi`（`:233-256`）。
   - 回傳物件裡的 `connectWifi`（`:612`）。
 - `frontend/src/services/api.ts:126` 的 `wifiConnect`。
+- `frontend/src/components/DeviceStatus.tsx`：
+  - `onWifiConnect` prop 的宣告（`:38`）和解構（`:65`）。
+  - `:680` 的 `(onStartWifiTunnel || onWifiConnect) &&` 改成 `onStartWifiTunnel &&`。`App.tsx:1578` 一定會傳 `onStartWifiTunnel`，所以行為不變。
+  - `:679` 的註解「collapsible with iOS version tabs」說的是 v0.1.49 拿掉的分頁，改成符合現況，只說這一段可以收合。
 
 要留：
 
@@ -103,26 +108,41 @@ Type: task
 
 ## 驗收
 
-- 搜尋時排除 `.scratch/`、`.venv/`、`.cache/`、`node_modules/`，以下名稱都要找不到：
+- 用 `git grep -n -e <名稱> -- ':!.scratch'` 搜尋，要分大小寫，以下名稱都要找不到：
+  - 用 `git grep` 是因為它只搜 git 追蹤的檔案。`frontend/dist/` 的舊 build 和 `__pycache__/` 的 `.pyc` 雖然在 `.gitignore` 裡，檔案還在磁碟上。例如 `frontend/dist/assets/index-DN7WlHun.js` 現在就有 `pin_ip_map` 和 `wifi/scan`。用 rg 或 grep 搜的話會誤判成失敗。
   - `pin_ip_map`、`PIN_IP_MAP_KEY`、`readSavedEntryFor`
-  - `scanWifi`、`WifiScanResult`、`wifiDevices`、`api.wifiScan`、`/wifi/scan`
+  - `scanWifi`、`WifiScanResult`、`wifiDevices`、`wifi/scan`
+  - 路徑類的搜尋詞開頭不加 `/`。Git Bash 會把開頭是 `/` 的參數轉成 Windows 路徑，`git grep -e /wifi/scan` 什麼都搜不到，驗收照樣過。
+  - `wifiScan` 要加 `-w` 整字比對，才不會搜到新按鈕的 `wifiScanning`、`wifiScanDisabled`。
   - `scan_wifi_devices`、`_load_pair_record`、`_guess_local_subnet`、`create_using_tcp`
-  - `connectWifi`、`wifiConnect`。搜尋要分大小寫，`findAndConnectWifi` 要留。
+  - `connectWifi`、`wifiConnect`、`onWifiConnect`。`findAndConnectWifi` 要留。
   - `useDevice.ts` 裡也不能再有 `wifiScanning`。`DeviceStatus.tsx` 的那個要留。
-  - `/wifi/connect` 只能剩 `backend/api/device.py:20` 那行註解。`connect_wifi` 只能剩 `device_manager.py` 的那段註解，加上 `connect_wifi_tunnel`。
-- `frontend` 的 `npm run build` 要過。它會先跑 `tsc`，還有地方用到拿掉的東西就會編譯不過。
+- 以下名稱只能剩指定的那一處：
+  - `wifi/connect` 只能剩 `backend/api/device.py:20` 那行註解。
+  - `git grep -nw connect_wifi` 只能剩 `backend/core/device_manager.py:656` 那行註解。
+- `backend/core/device_manager.py` 裡搜 `^import socket` 和 `^from pathlib import Path`，都要找不到。Python 不會因為沒用到的 import 報錯，repo 也沒有 linter，所以要另外查。
+- `frontend` 的 `npm run build` 要過。它會先跑 `tsc`，還有地方用到拿掉的東西就會編譯不過。但 tsconfig 設了 `noUnusedLocals: false`，留下沒人用的東西 tsc 抓不到，要靠上面的 grep。
 - 現有測試都要過，而且 0 skipped：
   - 前端：`tests/frontend/` 用 `node --test` 跑。
   - 後端：`tests/device/` 三支、`tests/launcher/` 一支、`tests/pipi/` 的 `test_*.py`，加上 `node tests/pipi/test_extension.js`。
   - `tests/pipi/check_live_anonymous.py` 會連到真網站，不用跑，但要寫明沒跑。
 - 不加新測試：這張只刪掉沒有人呼叫的程式碼，沒有行為可以鎖住，mutation check 也套用不上。編譯和 grep 就是這張的檢查。
 - 人工驗證：`togglePin` 沒有自動測試，所以在瀏覽器測。用 `fetch` 攔截假一條 WiFi 通道，不用真手機。
-  - 先刪掉 `locwarp.tunnel.pin_ip_map` 這個 key，再按通道卡片上的釘選。`locwarp.tunnel.pinned` 要多出那個 UDID，`pin_ip_map` 不能再出現。
+  - 先讓檢查真的驗得到東西：
+    - 舊程式只有在 `locwarp.tunnel.savedips` 裡有那個 UDID 時才會寫 `pin_ip_map`。`readSavedEntryFor` 找不到就跳過，見 `useDevice.ts:378-379`。
+    - 只攔截 `/wifi/tunnel/status` 做出來的假通道，不會寫進 savedips。這樣不管改沒改，`pin_ip_map` 都不會出現，這一步一定過。
+    - 所以釘選前，先在 savedips 手動加一筆那個 UDID 的位址，例如 `{ ip, port, udid, lastUsed }`。假通道如果走 `start-and-connect`，`upsertSavedIp`（`useDevice.ts:492`）也會寫進去。
+    - 動第 1 節之前，先照下面的步驟跑一次，確認 `pin_ip_map` 會出現。這證明這個檢查抓得到。
+  - 刪掉 `locwarp.tunnel.pin_ip_map` 這個 key，再按通道卡片上的釘選。`locwarp.tunnel.pinned` 要多出那個 UDID，`pin_ip_map` 不能出現。
   - 再按一次取消釘選，`locwarp.tunnel.pinned` 要把那個 UDID 拿掉。
   - 後端要起得來，`GET /api/device/wifi/scan` 要回 404。
+    - 這台機器的安裝版也用 8777 port，它還有這條路由，會回 200。
+    - 所以先確認回應的是 dev 後端，例如看 dev 後端的 uvicorn access log 有沒有這筆請求。
 - Commit：
   - 開票用 `.scratch:`。
-  - 實作用 `裝置連線:`，三節各一個 commit，方便個別 revert。第 2、3 節都會改到 `useDevice.ts:4` 那行 import，後做的那個 commit 把整行刪掉。
+  - 實作用 `裝置連線:`，三節各一個 commit。
+    - 每個 commit 單獨跑 `npm run build` 都要過。
+    - 第 2、3 節都會改到 `useDevice.ts:4` 的 import 和 `:612` 的回傳。後做的那個 commit 把這兩行整行刪掉，所以先做的那個 commit 不能單獨 revert，會在這兩行衝突。
   - 結果用 `.scratch:`。
 
 ## 不做
@@ -132,3 +152,14 @@ Type: task
 ## Comments
 
 - 2026-11-06：使用者決定把 `connectWifi`、`api.wifiConnect` 移進範圍，成為第 3 節。開票時它們列在「不做」，因為不在原本指定的兩件事裡。
+- 2026-11-06：依另一個 session 的 review 修訂。九點都對過程式碼，全部採納：
+  - 第 3 節漏了 `DeviceStatus` 的 `onWifiConnect` prop，補進範圍和驗收。現況改寫：v0.1.49 前端也拿掉了分頁和 App 傳的 prop，不是「只拿掉後端」。
+  - `api.wifiScan` 這個搜尋詞本來就找不到東西，改成 `wifiScan` 整字比對。
+  - 釘選的人工驗證：假通道的 UDID 不在 savedips 時，`pin_ip_map` 本來就不會寫，這一步一定過。補上先在 savedips 加一筆，並在動手前先跑一次、確認它會出現。
+  - `socket`、`Path` 漏刪的話沒有任何檢查會發現，補上 grep。
+  - 搜尋改用 `git grep`，避開 `frontend/dist/` 的舊 build 和 `.pyc`。
+  - `connect_wifi` 改成 `-w` 整字比對，寫明只能剩哪一行。
+  - 「相關」寫明只有第 1、2 節來自 wifi-scan-button 那張票。
+  - Commit：`:612` 那行也是兩節都會改；拿掉「方便個別 revert」，改成每個 commit 單獨 build 都要過。
+  - 確認 404 之前，先確認回應的是 dev 後端，不是同樣用 8777 的安裝版。
+  - 修訂時另外發現（review 沒提到）：在 Git Bash 跑 `git grep -e /wifi/scan`、`-e /wifi/connect` 會被轉成 Windows 路徑，什麼都搜不到。搜尋詞改成不加開頭的 `/`，搜到的行跟 `MSYS_NO_PATHCONV=1` 時一樣。

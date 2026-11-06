@@ -583,7 +583,7 @@ class DeviceManager:
 
     async def _create_dvt_location_service(
         self, conn: _ActiveConnection
-    ) -> DvtLocationService:
+    ) -> LocationService:
         """Spin up a DVT provider and hand it to ``DvtLocationService``.
 
         If DVT fails (for example the Developer Disk Image is not mounted),
@@ -625,19 +625,13 @@ class DeviceManager:
             )
             # iOS 17+ still exposes com.apple.dt.simulatelocation on some
             # devices (reported working on iOS 26 by multiple users), so
-            # try the legacy service before giving up entirely.
-            try:
-                # Prefer the original usbmux/TCP lockdown for DtSimulateLocation;
-                # fall back to whatever we have stored if not available.
-                legacy_lockdown = conn.usbmux_lockdown or conn.lockdown
-                legacy = LegacyLocationService(legacy_lockdown)
-                logger.info("Using LegacyLocationService fallback for %s", conn.udid)
-                return legacy
-            except Exception:
-                logger.exception(
-                    "Both DVT and legacy location services failed for %s", conn.udid
-                )
-                raise dvt_exc
+            # use the legacy service instead.
+            # Prefer the original usbmux/TCP lockdown for DtSimulateLocation;
+            # fall back to whatever we have stored if not available.
+            legacy_lockdown = conn.usbmux_lockdown or conn.lockdown
+            legacy = LegacyLocationService(legacy_lockdown)
+            logger.info("Using LegacyLocationService fallback for %s", conn.udid)
+            return legacy
 
     async def _create_legacy_location_service(
         self, conn: _ActiveConnection

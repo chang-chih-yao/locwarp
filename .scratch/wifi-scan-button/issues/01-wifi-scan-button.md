@@ -226,6 +226,7 @@ Type: feature
 - 釘選裝置在開啟 LocWarp 時沒連上的重試。釘選目前只在 WiFi 通道斷掉後每 15 秒重試，這張不改。
 - 「自動偵測」的行為。
 - 清理舊的 lockdownd 掃描：`useDevice` 的 `scanWifi`、`wifiScanning`、`wifiDevices`、`api.wifiScan`、後端 `/wifi/scan` 與 `scan_wifi_devices`。目前都沒在用，待以後清理。
+  - 已另開票：`.scratch/device-dead-code/issues/01-remove-pin-ip-map-and-lockdownd-scan.md`。
 - 縮短一次掃描的總時間。
   - `wifi_tunnel_start` 從頭到尾都拿著 `_tunnels_lock`，前端平行送出的請求在後端會一個接一個跑。
   - 連不到的存檔 IP 要等握手逾時、再重掃 Port；子網掃描到的非 iPhone 主機（例如開著 49152 的 PC 或路由器），每台最多會卡到 45 秒的上限。
@@ -328,10 +329,7 @@ Type: feature
   - 待清理：
     - `frontend/src/components/DeviceChipRow.tsx` 還有自己的 `MAX_DEVICES = 3`。保留 `wifiCandidates.ts` 匯出的那個，理由是有測試；`DeviceChipRow` 那份之後改成 import。
     - 2026-11-06 補（回答釘選按鈕的作用時發現，跟這張票無關，沒有改）：`localStorage` 的 `locwarp.tunnel.pin_ip_map` 只寫不讀。
-      - `frontend/src/hooks/useDevice.ts:360-383` 的 `togglePin`：釘選時寫入「UDID → 最新存檔的 `ip:port`」，取消釘選時刪掉那筆。
-      - 註解說是給開啟時的自動連線用（issue #35），但從 upstream `d0543e5`（v0.2.170）加進來到現在，除了 `togglePin` 自己讀出來改完再寫回去，沒有任何地方讀它。
-      - 自動連線實際的篩選是 `locwarp.tunnel.pinned` 加上存過的 IP 的 UDID（`wifiCandidates.ts`），沒有用到這份。
-      - 沒有害處，只是多一份沒用的資料和兩段誤導的註解。清理時拿掉這兩段寫入和註解；使用者瀏覽器裡已經存在的這個 key 留著也不影響。
+      - 細節和檔案位置已搬到 `.scratch/device-dead-code/issues/01-remove-pin-ip-map-and-lockdownd-scan.md`。
   - 跟這張票無關、沒有修：
     - USB 掃描按鈕閃的「找到 n 台裝置」可能少算。`App` 傳的 `onScan={() => { device.scan() }}` 沒有回傳 promise，按鈕在掃描結束前就讀裝置數。驗證時 `/list` 回 2 台，按鈕閃「找到 1 台裝置」。
       - 2026-11-06 已修，在 `bc0b944`：

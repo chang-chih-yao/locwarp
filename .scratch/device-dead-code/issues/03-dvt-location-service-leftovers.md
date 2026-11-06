@@ -241,7 +241,7 @@ Type: task
 - 前端 `useSimulation.ts:579-584` 註解裡的「we no longer surface the hint as a banner」：
   - 拿掉 `hint` 之後，payload 裡就沒有這個欄位了。但這句是在說前端以前會顯示、現在不顯示，用來解釋為什麼這裡什麼都不顯示，意思還是對的。
   - 改它要動前端，超出這張只改後端的範圍。
-- 同一類「前後端對不上」、但在 iOS 16 classic DDI 和前端進度 UI 那邊的兩處，之後另開票：
+- 同一類「前後端對不上」、但在 iOS 16 classic DDI 和前端進度 UI 那邊的兩處，開成 04 號票（`.scratch/device-dead-code/issues/04-ddi-mount-event-payload-mismatch.md`）：
   - 前端處理 `ddi_mounting` 時會讀 `stage`、`elapsed`（`useSimulation.ts:564-570`，畫在 `frontend/src/App.tsx:2238-2255`）。
     - 後端送這兩個欄位的地方在 v0.2.58（`051de0e`）跟著 personalized DDI 自動掛載一起拿掉了。
     - 現在唯一送 `ddi_mounting` 的 `:562` 只帶 `udid`。

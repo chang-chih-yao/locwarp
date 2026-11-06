@@ -20,17 +20,6 @@ async def list_devices():
 # /wifi/connect (legacy direct-IP WiFi for iOS <17) removed in v0.1.49.
 
 
-@router.get("/wifi/scan")
-async def wifi_scan():
-    """Scan the local network for iOS devices."""
-    dm = _dm()
-    try:
-        results = await dm.scan_wifi_devices()
-        return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 class WifiTunnelConnectRequest(BaseModel):
     rsd_address: str
     rsd_port: int

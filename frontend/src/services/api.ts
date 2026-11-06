@@ -124,7 +124,6 @@ export const listDevices = () => request<any[]>('GET', '/api/device/list')
 export const connectDevice = (udid: string) => request<any>('POST', `/api/device/${udid}/connect`)
 export const disconnectDevice = (udid: string) => request<any>('DELETE', `/api/device/${udid}/connect`)
 export const wifiConnect = (ip: string) => request<any>('POST', '/api/device/wifi/connect', { ip })
-export const wifiScan = () => request<any[]>('GET', '/api/device/wifi/scan')
 // ports: extra RemotePairing port candidates the backend walks if `port` is
 // stale. iOS re-picks the port on every boot, so a remembered one often is.
 // skipConnected: a phone already connected (USB or WiFi) answers

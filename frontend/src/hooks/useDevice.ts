@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   listDevices, connectDevice, disconnectDevice,
-  wifiConnect, wifiScan,
+  wifiConnect,
   wifiTunnelStartAndConnect, wifiTunnelStatus, wifiTunnelStop, wifiTunnelDiscover,
   type TunnelInfo,
 } from '../services/api'
@@ -29,13 +29,6 @@ export interface DeviceInfo {
   // WiFi only: the RemotePairing port the tunnel actually handshook on,
   // which can differ from the requested one when the backend re-scans.
   port?: number
-}
-
-export interface WifiScanResult {
-  ip: string
-  name: string
-  udid: string
-  ios_version: string
 }
 
 export type WsSubscribe = (fn: (m: WsMessage) => void) => () => void
@@ -151,9 +144,6 @@ export function useDevice(subscribe?: WsSubscribe) {
     })
   }, [subscribe])
   const [scanning, setScanning] = useState(false)
-  // Legacy lockdownd scan state, see scanWifi below. Not the WiFi 掃描 button.
-  const [wifiScanning, setWifiScanning] = useState(false)
-  const [wifiDevices, setWifiDevices] = useState<WifiScanResult[]>([])
 
   const scan = useCallback(async () => {
     setScanning(true)
@@ -254,24 +244,6 @@ export function useDevice(subscribe?: WsSubscribe) {
     },
     [],
   )
-
-  // Legacy lockdownd scan (/wifi/scan), left over from the pre-iOS 17 direct
-  // WiFi connect removed in v0.1.49. Nothing calls it; pending cleanup. The
-  // WiFi 掃描 button (GLOSSARY.md: 裝置連線) is findAndConnectWifi.
-  const scanWifi = useCallback(async () => {
-    setWifiScanning(true)
-    try {
-      const results = await wifiScan()
-      const list: WifiScanResult[] = Array.isArray(results) ? results : []
-      setWifiDevices(list)
-      return list
-    } catch (err) {
-      console.error('WiFi scan failed:', err)
-      return []
-    } finally {
-      setWifiScanning(false)
-    }
-  }, [])
 
   // v0.2.83: WiFi tunnel state went from a singleton to a per-device list.
   // Each connected iOS 17+ WiFi device gets its own runner on the backend;
@@ -578,7 +550,7 @@ export function useDevice(subscribe?: WsSubscribe) {
 
   return {
     devices, connectedDevice, scanning, scan, connect, disconnect,
-    connectWifi, scanWifi, wifiScanning, wifiDevices,
+    connectWifi,
     startWifiTunnel, findAndConnectWifi, checkTunnelStatus, stopTunnel, tunnelStatus, tunnels,
     connectedDevices, primaryDevice,
     pinnedUdids, togglePin,

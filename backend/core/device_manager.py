@@ -18,12 +18,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Dict, Optional
 
-from pymobiledevice3.lockdown import create_using_usbmux, create_using_tcp
+from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
@@ -761,69 +759,6 @@ class DeviceManager:
             is_connected=True,
         )
 
-    async def scan_wifi_devices(
-        self,
-        subnet: str | None = None,
-        timeout: float = 0.5,
-    ) -> list[dict]:
-        """Scan the local network for iOS devices on port 62078 (lockdownd).
-
-        Tries each IP in the subnet concurrently.  Returns a list of
-        ``{"ip": ..., "name": ..., "udid": ...}`` dicts for reachable
-        devices.
-
-        If *subnet* is not given, the local machine's subnet is guessed
-        from the default route interface.
-        """
-        if subnet is None:
-            subnet = _guess_local_subnet()
-            if subnet is None:
-                logger.warning("Cannot determine local subnet for WiFi scan")
-                return []
-
-        logger.info("Scanning subnet %s for iOS devices...", subnet)
-
-        # Generate IPs: e.g. "192.168.1" → .1 to .254
-        base = subnet.rsplit(".", 1)[0]
-        ips = [f"{base}.{i}" for i in range(1, 255)]
-
-        async def _probe(ip: str) -> dict | None:
-            try:
-                _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(ip, 62078),
-                    timeout=timeout,
-                )
-                writer.close()
-                await writer.wait_closed()
-                # Port is open — try a quick lockdown to get device info
-                try:
-                    pair_rec = _load_pair_record()
-                    lockdown = await asyncio.wait_for(
-                        create_using_tcp(
-                            ip,
-                            pair_record=pair_rec,
-                            autopair=pair_rec is None,
-                        ),
-                        timeout=5.0,
-                    )
-                    vals = lockdown.all_values
-                    return {
-                        "ip": ip,
-                        "name": vals.get("DeviceName", "Unknown"),
-                        "udid": vals.get("UniqueDeviceID", lockdown.udid or ""),
-                        "ios_version": vals.get("ProductVersion", "0.0"),
-                    }
-                except Exception:
-                    # Port open but lockdown failed — still report it
-                    return {"ip": ip, "name": "iOS Device", "udid": "", "ios_version": ""}
-            except (OSError, asyncio.TimeoutError):
-                return None
-
-        results = await asyncio.gather(*[_probe(ip) for ip in ips])
-        found = [r for r in results if r is not None]
-        logger.info("WiFi scan found %d device(s)", len(found))
-        return found
-
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
@@ -987,62 +922,3 @@ class DeviceManager:
         for udid in udids:
             await self.disconnect(udid)
         logger.info("All devices disconnected")
-
-
-def _load_pair_record(udid: str | None = None) -> dict | None:
-    """Load a USB pair record from Apple's system Lockdown store.
-
-    On Windows, pair records live in ``%ALLUSERSPROFILE%\\Apple\\Lockdown``.
-    If *udid* is given, loads that specific record; otherwise loads the
-    first ``.plist`` found (most setups have only one device).
-    """
-    import os
-    import plistlib
-
-    lockdown_dir = Path(os.environ.get("ALLUSERSPROFILE", "C:/ProgramData")) / "Apple" / "Lockdown"
-    if not lockdown_dir.exists():
-        logger.debug("Apple Lockdown directory not found: %s", lockdown_dir)
-        return None
-
-    target: Path | None = None
-    if udid:
-        candidate = lockdown_dir / f"{udid}.plist"
-        if candidate.exists():
-            target = candidate
-    else:
-        # Pick the first device plist (skip SystemConfiguration.plist)
-        for f in lockdown_dir.glob("*.plist"):
-            if f.stem != "SystemConfiguration":
-                target = f
-                break
-
-    if target is None:
-        logger.debug("No pair record found in %s", lockdown_dir)
-        return None
-
-    try:
-        with open(target, "rb") as fh:
-            record = plistlib.load(fh)
-        logger.debug("Loaded pair record from %s", target)
-        return record
-    except Exception:
-        logger.exception("Failed to load pair record from %s", target)
-        return None
-
-
-def _guess_local_subnet() -> str | None:
-    """Best-effort guess of the local LAN subnet (e.g. '192.168.1.0/24').
-
-    Returns the base IP like '192.168.1.0' or ``None`` if unable to determine.
-    """
-    try:
-        # Open a UDP socket to a public IP (doesn't actually send)
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-        # Return the /24 base
-        parts = local_ip.rsplit(".", 1)
-        return f"{parts[0]}.0"
-    except (OSError, IndexError):
-        return None

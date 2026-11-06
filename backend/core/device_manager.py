@@ -331,7 +331,7 @@ class DeviceManager:
                 f"請以系統管理員身份執行 LocWarp。"
             )
 
-    # iOS < 17 path removed in v0.1.49 — see UnsupportedIosVersionError.
+    # -- iOS 16.x via usbmux lockdown --------------------------------------
 
     def _connect_legacy(
         self, udid: str, lockdown, ios_version: str
@@ -650,12 +650,8 @@ class DeviceManager:
         logger.info("Using LegacyLocationService for %s", conn.udid)
         return LegacyLocationService(conn.lockdown)
 
-    # _ensure_classic_ddi_mounted, _create_legacy_location_service, and
-    # connect_wifi (legacy direct-IP WiFi) removed in v0.1.49 — see
-    # UnsupportedIosVersionError. iOS 17+ continues to use the
-    # personalized DDI mount path + DvtLocationService (with
-    # LegacyLocationService as a runtime fallback inside
-    # _create_dvt_location_service when DVT itself fails).
+    # connect_wifi (legacy direct-IP WiFi) removed in v0.1.49. iOS 16 goes
+    # through usbmux (_connect_legacy); the WiFi tunnel below is iOS 17+ only.
 
     # ------------------------------------------------------------------
     # WiFi connection (iOS 17+ tunnel only)

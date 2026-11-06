@@ -69,11 +69,33 @@ export function needsDiscovery(mode: ConnectMode, pinnedUdids: ReadonlyArray<str
 }
 
 /**
+ * Try order rank, lower first. A failed attempt holds its slot
+ * (`fillFreeSlots`), so whoever is most likely to answer goes first:
+ *
+ * 0. saved and found again by this discovery;
+ * 1. only mDNS: always an iPhone on this WiFi right now, e.g. one whose
+ *    DHCP address changed;
+ * 2. only saved: most often fails because the phone's WiFi is off;
+ * 3. only the subnet scan: may not be an iPhone and hold its slot for the
+ *    full 45 s start budget.
+ *
+ * See .scratch/wifi-tunnel-parallel-start/issues/01-parallel-tunnel-start.md.
+ */
+function tryRank(sources: ReadonlyArray<CandidateSource>): number {
+  if (sources.includes('saved')) {
+    return sources.includes('mdns') || sources.includes('subnet') ? 0 : 2;
+  }
+  return sources.includes('mdns') ? 1 : 3;
+}
+
+/**
  * The addresses to start a WiFi 通道 on, best first. Not capped:
  * `fillFreeSlots` decides how many get tried.
  *
  * @param input everything known about the LAN and the devices right now.
- * @returns every candidate, saved addresses first.
+ * @returns every candidate: saved and found again, then mDNS only, then
+ *   saved only, then subnet scan only. Saved ones keep newest `lastUsed`
+ *   first within their rank, discovered ones the discovery order.
  */
 export function wifiCandidates(input: CandidateInput): WifiCandidate[] {
   const pinsOnly = !needsDiscovery(input.mode, input.pinnedUdids);
@@ -118,7 +140,8 @@ export function wifiCandidates(input: CandidateInput): WifiCandidate[] {
   for (const d of discovered) {
     add(d.ip, [d.port, ...(d.ports || [])], d.method === 'mdns' ? 'mdns' : 'subnet');
   }
-  return out;
+  // Stable sort: within a rank, the order built above stands.
+  return out.sort((a, b) => tryRank(a.sources) - tryRank(b.sources));
 }
 
 /** What one candidate's start-and-connect request came back with. */

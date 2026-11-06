@@ -3,10 +3,13 @@ is up (GLOSSARY.md: 裝置連線), e.g. 自動連線 trying a saved IP while the
 phone's WiFi is off: start() must raise the connect's own error, so
 wifi_tunnel_start can move on to the next port or UDID, and asyncio must not
 log "Task exception was never retrieved" with the whole traceback once the
-finished task is garbage-collected.
+finished task is garbage-collected. And when start() itself is cancelled
+mid-handshake, the task it opened must not keep connecting with no owner
+(.scratch/wifi-tunnel-parallel-start/issues/01-parallel-tunnel-start.md).
 
 Run from the repo root: .venv/Scripts/python.exe tests/device/test_wifi_tunnel_runner.py
-The pymobiledevice3 connect is a fake that raises: no network, no phone."""
+The pymobiledevice3 connect is a fake that raises or never answers: no
+network, no phone."""
 import asyncio
 import gc
 import sys
@@ -58,5 +61,49 @@ raised, reported = run(ConnectionRefusedError)
 assert raised is ConnectionRefusedError, raised
 assert reported == [], reported
 print("ok  connect refused: start() raises ConnectionRefusedError, nothing logged after gc")
+
+
+def run_cancelled():
+    """start() cancelled while the connect is still pending, e.g. its
+    /wifi/tunnel/start request was cancelled. Returns the type start()
+    raised, the task start() opened, the runner, and what the loop's
+    exception handler received."""
+    reported: list[str] = []
+
+    async def fake_connect(udid, ip, port):
+        await asyncio.sleep(3600)  # a handshake that hasn't answered yet
+
+    tunnel_service.create_core_device_tunnel_service_using_remotepairing = fake_connect
+
+    async def main():
+        asyncio.get_running_loop().set_exception_handler(
+            lambda loop, ctx: reported.append(ctx["message"]))
+        runner = TunnelRunner()
+        start = asyncio.create_task(runner.start("00008110-PHONE", "192.0.2.1", 49152, timeout=8.0))
+        await asyncio.sleep(0.05)
+        opened = runner.task
+        start.cancel()
+        raised = None
+        try:
+            await start
+        except BaseException as e:
+            raised = type(e)
+        # Checked before asyncio.run() cancels whatever is left over.
+        done = opened is not None and opened.done()
+        gc.collect()
+        return raised, opened, done, runner
+
+    raised, opened, done, runner = asyncio.run(main())
+    return raised, opened, done, runner, reported
+
+
+# 3) Cancelled mid-handshake: nobody holds this runner any more, so a
+# tunnel coming up later would never be stopped.
+raised, opened, done, runner, reported = run_cancelled()
+assert raised is asyncio.CancelledError, raised
+assert opened is not None and done, "the task start() opened must be finished, not still connecting"
+assert runner.task is None and not runner.is_running(), runner.task
+assert reported == [], reported
+print("ok  cancelled mid-handshake: start() re-raises, its task is finished, nothing logged")
 
 print("all ok")

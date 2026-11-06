@@ -33,7 +33,7 @@ test('WiFi 掃描不受釘選限制：照樣用偵測結果，也不濾掉未釘
       ],
       discovered: [{ ip: '192.168.1.12', port: 50000, method: 'mdns' }],
     }),
-    ['192.168.1.10', '192.168.1.11', '192.168.1.12'],
+    ['192.168.1.12', '192.168.1.10', '192.168.1.11'],
   );
 });
 
@@ -60,7 +60,7 @@ test('自動連線沒有釘選時會用偵測結果', () => {
       savedIps: [{ ip: '192.168.1.13', port: 49152, lastUsed: 1 }],
       discovered: [{ ip: '192.168.1.12', port: 50000, method: 'mdns' }],
     }),
-    ['192.168.1.13', '192.168.1.12'],
+    ['192.168.1.12', '192.168.1.13'],
   );
 });
 
@@ -97,7 +97,7 @@ test('IP 等於某條 WiFi 通道的手機 IP 就跳過：沒有 UDID 的存檔 
         { ip: '192.168.1.14', port: 50001, ports: [50001], method: 'tcp_scan' },
       ],
     }),
-    ['192.168.1.11', '192.168.1.13'],
+    ['192.168.1.13', '192.168.1.11'],
   );
 });
 
@@ -147,7 +147,7 @@ test('同一個 IP 只出一個候選：Port 合併、存過的在前，來源�
   ]);
 });
 
-test('存過的 IP 排在偵測結果前面；候選不截斷，超過名額的留給 fillFreeSlots 補位', () => {
+test('只有 mDNS 找到的排在只有存過的 IP 前面；候選不截斷，超過名額的留給 fillFreeSlots 補位', () => {
   assert.deepEqual(
     ips({
       connectedUdids: ['U1'],
@@ -158,7 +158,57 @@ test('存過的 IP 排在偵測結果前面；候選不截斷，超過名額的�
         { ip: '192.168.1.43', port: 50000, method: 'mdns' },
       ],
     }),
-    ['192.168.1.40', '192.168.1.41', '192.168.1.42', '192.168.1.43'],
+    ['192.168.1.41', '192.168.1.42', '192.168.1.43', '192.168.1.40'],
+  );
+});
+
+// A failed attempt holds its slot (fillFreeSlots), so whoever is most likely
+// to answer goes first; .scratch/wifi-tunnel-parallel-start/issues/01-parallel-tunnel-start.md.
+test('排序（mDNS）：存過且這次也找到的、只有 mDNS 找到的、只有存過的', () => {
+  assert.deepEqual(
+    ips({
+      savedIps: [
+        { ip: '192.168.1.50', port: 49152, udid: 'A', lastUsed: 200 },
+        { ip: '192.168.1.51', port: 49152, udid: 'B', lastUsed: 100 },
+      ],
+      discovered: [
+        { ip: '192.168.1.52', port: 50000, method: 'mdns' },
+        { ip: '192.168.1.51', port: 50000, method: 'mdns' },
+      ],
+    }),
+    ['192.168.1.51', '192.168.1.52', '192.168.1.50'],
+  );
+});
+
+test('排序（子網掃描）：存過且這次也找到的、只有存過的、只有子網掃描找到的（可能不是 iPhone，最多卡 45 秒）', () => {
+  assert.deepEqual(
+    ips({
+      savedIps: [
+        { ip: '192.168.1.50', port: 49152, udid: 'A', lastUsed: 200 },
+        { ip: '192.168.1.51', port: 49152, udid: 'B', lastUsed: 100 },
+      ],
+      discovered: [
+        { ip: '192.168.1.53', port: 50001, ports: [50001], method: 'tcp_scan' },
+        { ip: '192.168.1.51', port: 50001, ports: [50001], method: 'tcp_scan' },
+      ],
+    }),
+    ['192.168.1.51', '192.168.1.50', '192.168.1.53'],
+  );
+});
+
+test('排序：自動連線有釘選時不看偵測結果，照存過的 lastUsed 從新到舊', () => {
+  assert.deepEqual(
+    ips({
+      mode: 'auto',
+      pinnedUdids: ['A', 'B'],
+      savedIps: [
+        { ip: '192.168.1.50', port: 49152, udid: 'A', lastUsed: 200 },
+        { ip: '192.168.1.51', port: 49152, udid: 'B', lastUsed: 100 },
+      ],
+      // Would put B first if 自動連線 with pins looked at discovery.
+      discovered: [{ ip: '192.168.1.51', port: 50000, method: 'mdns' }],
+    }),
+    ['192.168.1.50', '192.168.1.51'],
   );
 });
 

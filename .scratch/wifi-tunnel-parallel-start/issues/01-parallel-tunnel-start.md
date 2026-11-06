@@ -1,6 +1,6 @@
 # 01 裝置連線：WiFi 通道同時開，一台連不上不再拖住其他台；候選先試存過、而且這次有找到的 IP
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: (none)
 Type: bug
 相關：`.scratch/wifi-scan-button/issues/01-wifi-scan-button.md`
@@ -268,35 +268,35 @@ Type: bug
 - 前端：在 `tests/frontend/test_wifi_candidates.ts` 加排序測試。
 
 **驗收條件：**
-- [ ] 後端新測試通過，涵蓋：
-  - [ ] 兩個不同 IP 同時送，一個 0.5 秒後失敗、一個 0.1 秒後成功：成功的在 0.3 秒內回來。兩個都等 0.5 秒：總時間少於 0.8 秒。這兩條在改之前是紅的。
-  - [ ] 已有 2 條執行中的通道，同時送 2 個不同 IP：一個 `started`、一個 409。沒有通道時同時送 4 個：3 個去握手、1 個 409。兩種情況最後執行中的通道都不超過 3 條。
-  - [ ] 同一個 IP 同時送兩次：假的 `start()` 只被呼叫一次，第二個回 `already_running`，登錄表只有一條。
-  - [ ] 握手失敗、丟例外、請求被取消之後，握手中的登記都撤掉了，之後再送照樣能連上。
-  - [ ] 握手成功、等登錄的鎖時被取消（測試先拿住 `_tunnels_lock` 再取消請求）：剛開的 runner 被 `stop()`，登錄表沒有它。
-  - [ ] 兩個 IP 同時握手成功、解出同一個 UDID：只留一條，另一條被 `stop()`，晚到的回 `already_running`。
-  - [ ] 握手中有人在登錄表放了同一個 UDID 的殘留 entry（`is_running()` 為 False）：殘留的被收掉，新的那條登錄，回 `started`。
-  - [ ] 另一個 IP 在握手（假的 `start()` 等 1 秒）時，對既有通道呼叫 Stop Tunnel：在 0.3 秒內回來。
-- [ ] `TunnelRunner.start()` 等握手時被取消：它開的 task 結束了，沒有留下還在跑的通道，也沒有「Task exception was never retrieved」。
-- [ ] 前端新測試通過：
-  - [ ] A 存過、`lastUsed` 較新、這次沒找到；B 存過、這次 mDNS 也找到；C 只有 mDNS 找到：順序 B、C、A。
-  - [ ] A 同上；B 存過、這次子網掃描也找到；D 只有子網掃描找到：順序 B、A、D。
-  - [ ] 自動連線有釘選時，順序跟現在一樣。
-- [ ] 既有前端測試裡同時有「只有存過的」和「只有 mDNS」候選的那幾條，只改預期順序，不改它們鎖的東西。原本的「存過的 IP 排在偵測結果前面」那條改名成新規則，「候選不截斷」照樣鎖住。
-- [ ] Mutation check 逐條回報，每一個都讓測試變紅，全部還原後全綠：
-  - [ ] 後端：鎖改回包住整段。
-  - [ ] 後端：上限只算執行中的通道。
-  - [ ] 後端：拿掉同一個 IP 的等待。
-  - [ ] 後端：拿掉 `finally` 撤登記。
-  - [ ] 後端：登錄時不再確認 UDID。
-  - [ ] 後端：拿掉「沒登錄的 runner 要 stop」。
-  - [ ] 後端：登錄時把殘留的 entry 當成在跑。
-  - [ ] 前端：拿掉排序。
-  - [ ] 前端：第 1 組只認 `subnet`、不認 `mdns`。
-  - [ ] 前端：第 2、3 組對調。
-  - [ ] 前端：只有子網掃描的跟只有 mDNS 的同一組，都排在只有存過的前面。
-- [ ] 既有測試全部照跑，結果逐一回報，沒跑的要明說：`node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"`、`tests/device/` 與 `tests/pipi/` 的 Python 腳本、`node tests/pipi/test_extension.js`、`npm run build`。0 skipped。
-- [ ] 回 wifi-scan-button 01 號票補一行：它的「候選不截斷，存過的 IP 排前面」已被這張取代，並指到這裡。
+- [x] 後端新測試通過，涵蓋：
+  - [x] 兩個不同 IP 同時送，一個 0.5 秒後失敗、一個 0.1 秒後成功：成功的在 0.3 秒內回來。兩個都等 0.5 秒：總時間少於 0.8 秒。這兩條在改之前是紅的。
+  - [x] 已有 2 條執行中的通道，同時送 2 個不同 IP：一個 `started`、一個 409。沒有通道時同時送 4 個：3 個去握手、1 個 409。兩種情況最後執行中的通道都不超過 3 條。
+  - [x] 同一個 IP 同時送兩次：假的 `start()` 只被呼叫一次，第二個回 `already_running`，登錄表只有一條。
+  - [x] 握手失敗、丟例外、請求被取消之後，握手中的登記都撤掉了，之後再送照樣能連上。
+  - [x] 握手成功、等登錄的鎖時被取消（測試先拿住 `_tunnels_lock` 再取消請求）：剛開的 runner 被 `stop()`，登錄表沒有它。
+  - [x] 兩個 IP 同時握手成功、解出同一個 UDID：只留一條，另一條被 `stop()`，晚到的回 `already_running`。
+  - [x] 握手中有人在登錄表放了同一個 UDID 的殘留 entry（`is_running()` 為 False）：殘留的被收掉，新的那條登錄，回 `started`。
+  - [x] 另一個 IP 在握手（假的 `start()` 等 1 秒）時，對既有通道呼叫 Stop Tunnel：在 0.3 秒內回來。
+- [x] `TunnelRunner.start()` 等握手時被取消：它開的 task 結束了，沒有留下還在跑的通道，也沒有「Task exception was never retrieved」。
+- [x] 前端新測試通過：
+  - [x] A 存過、`lastUsed` 較新、這次沒找到；B 存過、這次 mDNS 也找到；C 只有 mDNS 找到：順序 B、C、A。
+  - [x] A 同上；B 存過、這次子網掃描也找到；D 只有子網掃描找到：順序 B、A、D。
+  - [x] 自動連線有釘選時，順序跟現在一樣。
+- [x] 既有前端測試裡同時有「只有存過的」和「只有 mDNS」候選的那幾條，只改預期順序，不改它們鎖的東西。原本的「存過的 IP 排在偵測結果前面」那條改名成新規則，「候選不截斷」照樣鎖住。
+- [x] Mutation check 逐條回報，每一個都讓測試變紅，全部還原後全綠：
+  - [x] 後端：鎖改回包住整段。
+  - [x] 後端：上限只算執行中的通道。
+  - [x] 後端：拿掉同一個 IP 的等待。
+  - [x] 後端：拿掉 `finally` 撤登記。
+  - [x] 後端：登錄時不再確認 UDID。
+  - [x] 後端：拿掉「沒登錄的 runner 要 stop」。
+  - [x] 後端：登錄時把殘留的 entry 當成在跑。
+  - [x] 前端：拿掉排序。
+  - [x] 前端：第 1 組只認 `subnet`、不認 `mdns`。
+  - [x] 前端：第 2、3 組對調。
+  - [x] 前端：只有子網掃描的跟只有 mDNS 的同一組，都排在只有存過的前面。
+- [x] 既有測試全部照跑，結果逐一回報，沒跑的要明說：`node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"`、`tests/device/` 與 `tests/pipi/` 的 Python 腳本、`node tests/pipi/test_extension.js`、`npm run build`。0 skipped。
+- [x] 回 wifi-scan-button 01 號票補一行：它的「候選不截斷，存過的 IP 排前面」已被這張取代，並指到這裡。
 - [ ] 真手機實測留給使用者，回報時列為「沒做」，項目見內文「驗收」的真手機實測：
   - 重做 wifi-scan-button 01 的第 1 條。
   - 兩支同時連：兩條 `WiFi tunnel established` 的 RSD 位址不同，兩支都能瞬移。
@@ -310,3 +310,58 @@ Type: bug
 - 同一個 UDID 被兩個請求同時 `connect_wifi_tunnel` 的既有競爭：只記在票上，不修。
 - 掃描或自動連線進行中時停用 WiFi 面板的「Start WiFi Tunnel」按鈕。
 - `start-and-connect` 在 `wifi_tunnel_start` 之後的流程（`skip_connected`、re-key、失敗收通道），只換開頭預檢的計數。
+
+---
+
+- 2026-11-06：實作完成。Status 從 ready-for-agent 改成 ready-for-human：程式碼與測試做完了，真手機實測還沒做。實測完再改成 resolved。
+  - 後端 `backend/api/device.py`：
+    - `wifi_tunnel_start` 拆成三段。第 1 段在鎖裡：同一個 IP 已在握手就等它結束再重來、上限檢查、`already_running` 判斷、登記握手中。第 2 段 `_walk_tunnel_candidates` 不拿鎖。第 3 段 `_register_started_tunnel` 在鎖裡登錄。`finally` 撤掉握手中的登記，並喚醒同一個 IP 在等的請求。
+    - 握手中的登記是 `_tunnel_starts_in_flight: dict[str, asyncio.Event]`。用 Event 不用 Future：等待的請求被取消時，Future 會跟著被取消，其他等待者會一起醒來拿到 CancelledError。
+    - 上限計數抽成 `_tunnel_slots_in_use()`，`start-and-connect` 的預檢也改用它。
+    - 第 3 段遇到同一個 UDID：
+      - 那條在跑：收掉自己的，回 `already_running`。
+      - 那條是殘留：先收掉殘留的，再登錄自己的。
+      - 沒登錄的 runner 在 `finally` 一律 stop。
+    - 第 2 段收殘留的 entry 時，在鎖裡再確認一次。等鎖期間如果被換成在跑的通道，就跳過這個候選，跟迴圈開頭的「在跑就跳過」一致。這是 review 後加的。
+    - `already_running` 的回應抽成 `_already_running()`，第 1 段和第 3 段共用。
+  - `backend/core/wifi_tunnel.py`：`TunnelRunner.start()` 等握手時被取消，會先 cancel 並 await 它開的 task，再往上拋。
+  - 前端 `frontend/src/wifiCandidates.ts`：`tryRank()` 依四組回傳 0～3，`wifiCandidates` 最後做穩定排序。docstring 改成新規則。
+  - 測試：
+    - 新檔 `tests/device/test_wifi_tunnel_parallel_start.py`，13 組情境：
+      - 驗收列的 9 條。
+      - review 後補的 3 條：同一個 IP 送兩次且前一個失敗時，第二個自己握手；握手前就有的殘留 entry 會被收掉；等鎖期間殘留 entry 被換成在跑的通道時，不收掉、跳過。
+      - 第 1、2 條和 Stop Tunnel 那條（第 13 條），在改之前的程式碼上是紅的：0.62 秒、1.03 秒、0.95 秒。
+    - 「`TunnelRunner.start()` 握手中被取消」那條，放在既有的 `tests/device/test_wifi_tunnel_runner.py`，不在新檔。那支本來就是真的 runner 加假的 RemotePairing connect，驗收要的就是這個寫法。改之前是紅的。
+    - 「丟例外」的情境用 `TunnelRunner()` 建構時丟 `RuntimeError` 模擬。`start()` 丟出的 `Exception` 都會被握手迴圈接住，變成 500。
+    - `tests/frontend/test_wifi_candidates.ts`：
+      - 加 3 條排序測試。
+      - 既有 4 條只改預期順序。原本的「存過的 IP 排在偵測結果前面」改名成「只有 mDNS 找到的排在只有存過的 IP 前面；候選不截斷…」。
+      - 釘選那條改之前就是綠的：有釘選時本來就只有第 3 組。
+  - Mutation 14 種都讓測試變紅，還原後全綠：
+    - 驗收列的 11 種。
+    - `TunnelRunner.start` 被取消時不收 task。
+    - review 後加的 2 種：第 2 段拿掉鎖和重查；重查到在跑的照樣去握手。
+    - 「拿掉 `finally` 撤登記」先在同一個 IP 送兩次那條逾時變紅，第 7 條的 `left == {}` 也鎖著它。
+  - 測試結果：
+    - 型別檢查通過。
+    - 前端 95/95，0 skipped。
+    - `tests/device/` 3 支、`tests/pipi/` 4 支 `test_*.py`、`node tests/pipi/test_extension.js`、`npm run build` 都過。
+    - `tests/pipi/check_live_anonymous.py` 會打真的網站，沒有跑。
+  - 確認「兩台同時 `connect_wifi_tunnel`、`create_engine_for_device`」：讀程式碼，沒有問題，沒有實測。
+    - `_connections` 在 `dm._lock` 裡寫入，只會 disconnect 同一個 UDID。
+    - 模擬引擎和 location service 都是一台一個。
+    - `_primary_udid` 的判斷和設定之間沒有 await。
+    - `reconnect_manager` 會被後建的那台覆蓋，跟依序連線時一樣。
+  - Code review（Standards、Spec 兩軸）：
+    - 採納的都在上面：補 3 條測試、第 2 段重查後跳過、抽出 `_already_running`、`_register_started_tunnel` 拿掉多餘的 `port` 參數、`tryGroup` 改名 `tryRank`（避開「群組模式」）、測試註解的路徑補上檔名。
+    - 沒採納：`TunnelRunner.start` 的取消分支不跟逾時分支合併。逾時走 stop event 加 2 秒的溫和收尾，取消要立刻 cancel。
+  - 記下、沒修：
+    - 本文寫「它成功的話，這次就會走到 `already_running`」，但已有 2 條通道時，同一個 IP 同時送兩次，第二個會回 409。
+      - 原因：上限檢查排在 `already_running` 判斷前面，第一個成功後就滿 3 條。
+      - 改之前也一樣：已有 3 條通道時，對其中一條再送一次會回 409。「判斷照舊」就維持這個順序。
+      - 自動連線和 WiFi 掃描走不到這條：前端會跳過通道手機的 IP。要改順序的話另開票。
+    - `start-and-connect` 在 `connect_wifi_tunnel` 之前用 `len(dm._connections)` 檢查上限，這個檢查跟 connect 之間不是原子的。
+      - 通道的上限不算 USB 裝置。所以 1 台 USB 加 3 個同時送的 WiFi 請求，可能都通過檢查，最後連上 4 台。
+      - 改之前也有這個空檔，只是握手一個接一個，比較難碰到。
+      - 前端 `fillFreeSlots` 同時送出的數量不超過「3 − 已連上台數」，自動連線和 WiFi 掃描碰不到。要碰到，得手動連線跟掃描同時進行。
+  - 沒做：真手機實測的三條（見驗收），留給使用者。

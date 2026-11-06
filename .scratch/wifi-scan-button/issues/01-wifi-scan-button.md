@@ -105,6 +105,7 @@ Type: feature
     - 候選不截斷，存過的 IP 排前面。實際送出幾個由補位決定（2026-11-06 第二次 review 後改，見 Comments）：
       - 開「3 − 已連上裝置數」個名額，名額內平行送。
       - 回 `already_connected` 的候選讓出名額給下一個；連上或失敗就佔住，不往下試。
+      - 「存過的 IP 排前面」已被取代，改成「這次有找到的優先」四組排序，見 `.scratch/wifi-tunnel-parallel-start/issues/01-parallel-tunnel-start.md`。「候選不截斷」和補位照舊。
   - 回報統計也是這個模組裡的純函式（review 3）：
     - 輸入每個候選的結果（`connected`、`already_connected`、失敗）和它的來源，輸出新連上 n 台、連線失敗 m 台。
     - `already_connected` 兩邊都不算。
@@ -155,6 +156,7 @@ Type: feature
   - 同一個 UDID 只出一個候選，取最新的那筆。
   - 同一個 IP 只出一個候選，Port 合併、存過的在前，來源合併。
   - 存過的 IP 排在偵測結果前面，候選不截斷。
+    - 排序的部分已被 `.scratch/wifi-tunnel-parallel-start/issues/01-parallel-tunnel-start.md` 取代，這條測試改名成新規則，「候選不截斷」照樣鎖住。
   - 補位（2026-11-06 第二次 review 後加）：
     - 名額 = 3 − 已連上裝置數，依候選順序取。
     - 回 `already_connected` 的讓出名額給下一個。
@@ -228,6 +230,7 @@ Type: feature
   - `wifi_tunnel_start` 從頭到尾都拿著 `_tunnels_lock`，前端平行送出的請求在後端會一個接一個跑。
   - 連不到的存檔 IP 要等握手逾時、再重掃 Port；子網掃描到的非 iPhone 主機（例如開著 49152 的 PC 或路由器），每台最多會卡到 45 秒的上限。
   - 這張先在人工驗證量出實際秒數，太慢再另開票。
+  - 已另開票：`.scratch/wifi-tunnel-parallel-start/issues/01-parallel-tunnel-start.md`，後端改成不同 IP 同時握手。
 
 ## Comments
 

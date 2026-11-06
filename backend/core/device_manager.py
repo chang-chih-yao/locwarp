@@ -507,13 +507,7 @@ class DeviceManager:
         )
         try:
             from api.websocket import broadcast
-            await broadcast("ddi_not_mounted", {
-                "udid": conn.udid,
-                "hint": (
-                    "iPhone 上未偵測到 DDI。請先為這支 iPhone 掛載一次 DDI(Developer Disk Image),"
-                    "再重新連接 LocWarp;或先重開 iPhone 後再試。"
-                ),
-            })
+            await broadcast("ddi_not_mounted", {"udid": conn.udid})
         except Exception:
             pass
 

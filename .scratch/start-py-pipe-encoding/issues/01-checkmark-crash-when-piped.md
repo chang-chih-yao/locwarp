@@ -1,6 +1,6 @@
 # 01 start.py 的輸出接到 pipe 時，印 ✓ 會因為 cp950 當掉
 
-Status: ready-for-human
+Status: resolved
 Blocked by: (none)
 Type: bug
 
@@ -71,10 +71,30 @@ Type: bug
   - [x] 啟動服務之前的部分：經由 `uv run` 接 pipe，拿掉 `PYTHONUTF8` 和 `PYTHONIOENCODING`，用的是系統的 cp950。
     - 跑 banner、三個 `check_tool`、兩個依賴檢查，exit 0。
     - 5 個 `✓` 都印成 `?`，框線和中文照 cp950 輸出。
-  - [ ] 背景執行完整的 `uv run start.py`，前後端都起來：還沒做。
-    - 當時 8777、5173 有使用者自己開的 LocWarp 在跑。`start.py` 一啟動就會用 `kill_port` 清掉它們。
-    - 等那組停下來再跑，記得拿掉 `PYTHONUTF8` 和 `PYTHONIOENCODING`。
+  - [x] 背景執行完整的 `uv run start.py`，前後端都起來：當時沒做，因為 8777、5173 有使用者自己開的 LocWarp 在跑，`start.py` 一啟動就會用 `kill_port` 清掉它們。使用者停掉之後補做，結果見下一段。
 - review（Standards、Spec 兩軸）：
   - 沒有硬性違規，也沒有 scope creep。
   - 採納兩個註解修正：`backslashreplace` 實際印出的內容、拿掉 `PYTHONUTF8` 那行的理由。
 - 沒修：README 的專案結構原本就漏了 `tests/device/`，不在這張票的範圍。
+
+### 2026-11-06 背景執行完整的 `uv run start.py`
+
+- 做法：
+  - 使用者停掉自己的 LocWarp，8777、5173 都空著。
+  - 從 Bash 工具在背景執行 `env -u PYTHONUTF8 -u PYTHONIOENCODING uv run --cache-dir .cache/uv start.py 2>&1 | cat > log`，stdout 接 pipe，用的是系統的 cp950。
+  - stdin 在 120 秒後送一個 Enter，讓 `start.py` 自己跑 `cleanup()`。
+  - 這個 session 沒有管理員權限，啟動器印了「未以系統管理員身份執行」，不影響前後端啟動。
+- 結果：
+  - 啟動後 6 秒前後端都起來了。
+    - 後端：`/docs`、`/openapi.json` 回 200。
+    - 前端：`/` 回 200，`<title>LocWarp</title>`。
+    - 瀏覽器分頁有開，前端也連上了後端的 WebSocket。
+  - 啟動器的輸出全部照 cp950 寫出來：
+    - banner、框線、中文都正常。
+    - 7 個 `✓` 都印成 `?`：三個工具檢查、兩個依賴檢查、等待前後端的兩個「OK」。
+    - log 裡沒有 `Traceback` 或 `UnicodeEncodeError`。
+  - 子行程照「不做」的說明，各自用自己的編碼寫到同一條 pipe：
+    - 後端的 uvicorn log 是 cp950。
+    - Vite 是 UTF-8，用 cp950 解碼時，時間前面的「下午」變成亂碼。
+  - 收到 Enter 後啟動器 exit 0，8777、5173 都釋放了，也沒有留下 python 或 uv 行程。
+  - 結束後 3 秒時看到 3 個新的 node 行程，大約一分鐘內都自己結束了。去查的時候已經不在，無法確定是誰開的。

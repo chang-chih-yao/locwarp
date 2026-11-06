@@ -198,5 +198,5 @@ Type: task
     - 所以這次讓自動連線打攔截下來的 `start-and-connect`，做出假通道，savedips 照票上先放一筆。
   - review（Standards、Spec 兩軸）：都沒有發現問題，也沒有 scope creep。
   - 範圍外、沒修：
-    - `device_manager.py:653-658` 的註解說 `_ensure_classic_ddi_mounted`、`_create_legacy_location_service` 在 v0.1.49 拿掉了，其實兩個都還在（`:521`、`:642`），只有 `connect_wifi` 那部分是對的。它們是 `d512094` 讓 iOS 16 改走 USB 時加回來的，跟 `DeviceStatus.tsx` 那行 iOS 16 註解同一次。這張票寫明這段註解要留，所以沒動，待另外開票。這是 Standards review 發現的，我對過程式碼和 git 歷史。
+    - `device_manager.py:653-658` 的註解說 `_ensure_classic_ddi_mounted`、`_create_legacy_location_service` 在 v0.1.49 拿掉了，其實兩個都還在（`:521`、`:642`），只有 `connect_wifi` 那部分是對的。它們是 `d512094` 讓 iOS 16 改走 USB 時加回來的，跟 `DeviceStatus.tsx` 那行 iOS 16 註解同一次。這張票寫明這段註解要留，所以沒動，另開了 `.scratch/device-dead-code/issues/02-fix-stale-device-manager-comments.md`。這是 Standards review 發現的，我對過程式碼和 git 歷史。
     - 5174 驗證頁掛載時，`AddressSearch` 會發 `PUT /api/geocode/provider-pref`，把那個 origin 的 geocode 設定寫進 `~/.locwarp/settings.json`：provider 是 `arcgis`，key 是空的。這個檔案跟安裝版共用。這是既有行為，每個前端掛載時都會推自己 localStorage 裡的值，下次開正式版會推回它自己的設定。

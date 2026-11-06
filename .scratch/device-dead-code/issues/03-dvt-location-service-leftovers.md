@@ -1,6 +1,6 @@
 # 03 裝置連線：02 號票「不做」留下的四項程式碼小問題（回傳型別、走不到的分支、沒人讀的 hint、ensure 改名）
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: task
 相關：`.scratch/device-dead-code/issues/02-fix-stale-device-manager-comments.md` 的「不做」。02 號票只改說明文字，這四項都是程式碼變更，所以當時寫了「留給之後的票」，但沒有開票。另一個 session 審 02 號票的實作時指出這件事：它們埋在一張已關閉的票裡，之後掃還沒做完的票時會漏掉。
@@ -336,3 +336,44 @@ Type: task
     - 「`-x` 那行在 `async def` 往下第 2 行」：當時是在暫存副本上對的，跑的不是票上這條 `git grep` 指令。
     - 「找不到的 8 個詞都找不到」：當時只對了 `device_manager.py` 的暫存副本，沒有對整個 repo 跑，所以沒發現 README 也有。
   - review 核對過、沒問題的部分（`9cd9b56` 的行號、歷史、第 2 節的論證、`ddi_not_mounted` 的消費端、在暫存區的試跑）沒動。
+- 2026-11-07：實作完成，照票上的切法分四個 commit：
+  - `5514089`：第 5 節的新測試。在重構前的程式碼上印 `all ok`。
+  - `ce993e1`：第 1、2 節。
+  - `9047e8a`：第 3 節，唯一改變後端送出內容的 commit。
+  - `fff1286`：第 4 節。
+  - 第 2、4 節：把票上的參考寫法抽出來，跟檔案 `diff`，一字不差。第 2 節的參考寫法下一行是空行。
+  - 驗收 grep：
+    - 「要找不到」的 8 個詞都找不到。同樣的指令對 `9cd9b56` 跑，每個都找得到，確定 0 處不是指令寫錯。
+    - 「剛好幾處」6 項都對：
+      - `_check_personalized_ddi_mounted`：`:432` 是 `async def`，`:587` 是 `await self.`。
+      - broadcast 那行在 `:510`。`ddi_not_mounted` 在 `:444`（docstring）和 `:510`。
+      - `'^    ) -> LocationService:'` 在 `:580`，`async def _create_dvt_location_service(` 在 `:578`。對 `9cd9b56` 是 0 處。
+      - warning 在 `:589`，info log 在 `:625`。
+  - 範圍：
+    - `git diff 9cd9b56 --stat -- ':!.scratch'` 只有 `device_manager.py`（+11/−25）和新測試。
+    - `-U0` 的舊行範圍是 `432`、`510-516`、`586`、`592-593`、`595`、`628-640`，四節都有改到。加 `-w` 後，第 2 節只剩 `628-629`、`636-640`。
+  - import 和新測試：在暫存區開一個 detached worktree，四個 commit 各自 checkout 出來跑，都 import 成功、印 `all ok`、結束碼 0。
+  - mutation check：在最後的程式碼上做，每項做完 `git status` 都是乾淨的。
+    - M1（`return legacy` 換成 `raise dvt_exc`）：`RuntimeError: fake DVT failure` 往上丟，結束碼 1，(a) 沒印 `ok`。
+    - M2（broadcast 那行換成 `pass`）：(a) 印 `ok`，(b) `AssertionError: []`，結束碼 1。
+  - 測試：
+    - 通過：前端 95/95（0 skipped）、`tests/device` 4 支（含新的）、`tests/launcher` 1 支、`tests/pipi` 4 支 `test_*.py`、`test_extension.js`。結束碼都是 0。
+    - 沒跑：`check_live_anonymous.py`，它會連到真網站。
+    - Spec review 在 worktree 裡跑前端，有 2 項失敗。原因是 `test_defaults.ts:104-105` 要用 repo 根目錄的 `.venv`，worktree 裡沒有（`.gitignore`），不是這次改動造成的。主目錄同一份程式碼 95/95。
+  - 型別檢查：repo 沒有 Python 型別檢查工具（沒裝 mypy、pyright，也沒有設定檔），沒有另外安裝，改用 import 和新測試。
+  - 人工核對清單逐條都過：
+    - 第 2 節：`except Exception as dvt_exc:` 區塊裡沒有 `try:`，沒有「giving up」，也沒寫 Legacy 要到 `set()` 才開 `DtSimulateLocation`。
+    - 第 3 節：`useSimulation.ts` 沒動。
+    - 第 4 節：`try:` 上方沒有註解。docstring 不在任何 hunk 的範圍內，沒動。
+    - 新測試：從 `get_location_service` 進去；(b) 只看 `ddi_not_mounted` 事件的 `udid`，沒有比對整個 payload；docstring 照 `tests/device` 既有的格式。
+  - review（Standards、Spec 兩軸）：
+    - Spec：第 1-5 節都照票做了，沒有 scope creep，也沒有做法不對的。唯一缺的是這筆結果紀錄。
+    - Standards：沒有硬性違規。三點判斷題，都沒改：
+      - `_create_dvt_location_service` 可能是 Mysterious Name，因為 DVT 失敗時回傳 Legacy。
+        - 沒改：名字講的是主要路徑，退回已經寫在 docstring，回傳型別現在也寫 `LocationService`。
+        - 跟 `_ensure_` 不一樣：`ensure` 講的是一件沒做的事。理由跟「看過、沒列入」的 `:408` 一樣。
+        - 這張沒討論過這個名字，要改的話另開票。
+      - 同函式三處 `broadcast` 的 `try/except` 包法一樣，可能是 Duplicated Code：超出這張的範圍。第 3 節也規定外面的 `try/except` 要留著，跟另外兩處一樣。
+      - 新測試的情境用 `# a)`、`# b)`，既有測試用 `# 1)`：照第 5 節的 (a)、(b)，`FakeMounter` 的 docstring 也是這樣指。
+  - 範圍外、沒修：除了上面的判斷題，沒有新發現。「不做」的各項維持原樣。
+  - 04、05 號票都是 `Blocked by: 03`，現在解除封鎖。兩張的行號、舊函式名 `_ensure_personalized_ddi_mounted` 和 05 號票說的 `device_manager.py:513` 的 `hint`，都是開票時（`933d910`、`b21190c`）的紀錄，現在已經不是這樣。兩張都寫了以內容為準，所以沒改，triage 時再對一次。

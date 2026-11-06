@@ -120,6 +120,11 @@ class TunnelRunner:
             raise
         if self._error is not None:
             exc = self._error
+            # _run re-raises right after setting _error, so the task is done
+            # by now. Retrieve its exception, or asyncio logs "Task exception
+            # was never retrieved" with the whole traceback when the task is
+            # garbage-collected.
+            self.task.exception()
             self.task = None
             raise exc
         return dict(self.info or {})

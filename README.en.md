@@ -423,6 +423,7 @@ locwarp/
 ├── extensions/pipi-cookie-sync/  # Chrome extension: syncs the mushroom map login cookie
 ├── tests/pipi/              # Test scripts for the mushroom layer and extension
 ├── tests/frontend/          # Tests for mode speeds, initial values and flower rules (node --test)
+├── tests/launcher/          # Test scripts for the start.py launcher
 ├── docs/                    # Design notes (pipi-mushroom.md) and setup page
 │
 ├── LocWarp.bat / start.py   # Dev launcher (auto-elevates)

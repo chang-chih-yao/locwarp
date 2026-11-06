@@ -14,6 +14,12 @@ import webbrowser
 import urllib.request
 import socket
 
+# A pipe uses the system code page (cp950 on zh-TW), which has no ✓ / ✗, so
+# print them as "?" instead of crashing. Not UTF-8: every other byte on the
+# pipe stays in the code page its readers decode with. The console is UTF-8
+# already (PEP 528), so nothing is replaced there.
+sys.stdout.reconfigure(errors="replace")
+
 # 路徑設定
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.path.join(ROOT, "backend")

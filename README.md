@@ -423,6 +423,7 @@ locwarp/
 ├── extensions/pipi-cookie-sync/  # Chrome 擴充功能:同步蘑菇地圖登入 Cookie
 ├── tests/pipi/              # 蘑菇地圖圖層與擴充功能的測試腳本
 ├── tests/frontend/          # 模式速度、初始值與花的判斷的測試(node --test)
+├── tests/launcher/          # 啟動器 start.py 的測試腳本
 ├── docs/                    # 設計筆記(pipi-mushroom.md)與說明頁
 │
 ├── LocWarp.bat / start.py   # 開發用啟動器(自動提權)

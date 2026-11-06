@@ -21,15 +21,20 @@ from services.location_service import LegacyLocationService  # noqa: E402
 
 PHONE = "00008110-PHONE"
 BROADCASTS: list[tuple[str, dict]] = []
+DVT_OPENS: list[object] = []
 
 
 class FakeDvtProvider:
-    """Opening DVT fails, as it does when the DDI is not mounted."""
+    """Opening DVT fails, as it does when the DDI is not mounted. Each
+    attempt is recorded: the real DvtProvider also fails on FakeLockdown, so
+    without the record (a) would pass even if this fake were never used or
+    DVT were skipped altogether."""
 
     def __init__(self, lockdown):
         self.lockdown = lockdown
 
     async def __aenter__(self):
+        DVT_OPENS.append(self.lockdown)
         raise RuntimeError("fake DVT failure")
 
 
@@ -76,7 +81,9 @@ async def main():
 
 loc = asyncio.run(main())
 
-# a) Location simulation stays available over DtSimulateLocation.
+# a) Location simulation stays available over DtSimulateLocation, and only
+# after DVT was tried and failed.
+assert DVT_OPENS, "DVT was never tried through FakeDvtProvider"
 assert isinstance(loc, LegacyLocationService), type(loc)
 print("ok  DVT fails: get_location_service falls back to LegacyLocationService")
 

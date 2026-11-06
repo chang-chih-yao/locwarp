@@ -1573,7 +1573,7 @@ const App: React.FC = () => {
             developerModeEnabled: d.developer_mode_enabled,
           }))}
           isConnected={device.connectedDevice !== null}
-          onScan={() => { device.scan() }}
+          onScan={async () => (await device.scan()).length}
           onSelect={(id: string) => { device.connect(id) }}
           onStartWifiTunnel={device.startWifiTunnel}
           onStopTunnel={device.stopTunnel}

@@ -28,7 +28,8 @@ interface DeviceStatusProps {
   device: Device | null;
   devices: Device[];
   isConnected: boolean;
-  onScan: () => void | Promise<void>;
+  /** 掃描 USB 裝置; resolves with how many devices it found, for the result flash. */
+  onScan: () => Promise<number>;
   onSelect: (id: string) => void;
   onStartWifiTunnel?: (ip: string, port?: number, udid?: string, ports?: number[]) => Promise<any>;
   onStopTunnel?: (udid?: string) => Promise<void>;
@@ -163,19 +164,19 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
   // null = no recent scan; number = device count from most recent scan (flash display)
   const [scanResult, setScanResult] = useState<number | null>(null);
   const scanResultTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const devicesRef = React.useRef(devices);
-  devicesRef.current = devices;
 
   const handleScan = async () => {
     if (scanResultTimer.current) clearTimeout(scanResultTimer.current);
     setScanning(true);
     setScanResult(null);
+    let found = 0;
     try {
-      await Promise.resolve(onScan());
+      // The scan's own count, not the devices prop: the parent hasn't
+      // re-rendered with the new list yet when the promise resolves.
+      found = await onScan();
     } finally {
       setScanning(false);
-      // Read the freshest devices state via ref — parent has updated by now
-      setScanResult(devicesRef.current.length);
+      setScanResult(found);
       scanResultTimer.current = setTimeout(() => setScanResult(null), 2000);
     }
   };

@@ -1,6 +1,6 @@
 # 02 裝置連線：device_manager.py 裡過時的 iOS 16 與 DDI 自動掛載說明改成符合現況
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: task
 相關：`.scratch/device-dead-code/issues/01-remove-pin-ip-map-and-lockdownd-scan.md`。第 1 節是 01 號票的 Standards review 發現的。01 號票寫明那段註解要留，所以另開這張。第 2、3 節是開這張票時另外發現，第 4 節是另一個 session 審這張票時發現，都由使用者決定併進來。
@@ -290,3 +290,35 @@ Type: task
   - 「要留」補上 `:557`。
   - 第一個實作 commit 的訊息要提到順手拿掉的「personalized DDI mount path」。
   - 改完後，把四節參考寫法套在 `device_manager.py` 的暫存副本上試跑：範圍檢查、找不到和剛好找到的搜尋、`connect_wifi` 和 `Classic DDI auto-mount failed` 的處數、小標題寬度與位置、import 都過。
+- 2026-11-07：實作完成，照票上的切法分兩個 commit：
+  - `197cf75`：第 1、2 節。commit 訊息有寫到順手拿掉的、v0.2.58 才變錯的「personalized DDI mount path」那句。
+  - `ab25812`：第 3、4 節，包含唯一一行 log 文字的變更。
+  - 四節的 docstring 和註解都照參考寫法，warning 文字照抄。
+  - 驗收 grep：
+    - 「要找不到」的 9 個詞都找不到。`retry once` 只搜 `device_manager.py`，也找不到。
+    - 「剛好 1 處」：warning 在 `:597`；小標題在 `:334`，它下面第一個非空行是 `def _connect_legacy(`。
+    - `-w connect_wifi` 只剩 `:653` 改寫後的那行。`Classic DDI auto-mount failed` 還是 2 處。
+  - 範圍：
+    - `git diff b345bc8 --stat -- ':!.scratch'` 只有 `device_manager.py`，+12/−16。
+    - `-U0` 的舊行範圍是 `334`、`443-447`、`590-591`、`593`、`597`、`653-658`，都在票列的範圍內，四節都有改到。
+    - Spec review 另外用 AST 比對過，docstring 先正規化：只有 `:597` 的 log 文字不同，其他都是註解或 docstring。
+  - import：兩個 commit 各自的內容都跑過，都成功。`197cf75` 是 commit 前在工作目錄跑的，Spec review 又單獨載入一次。
+  - 測試：
+    - 通過：前端 95/95（0 skipped）、`tests/device` 3 支、`tests/launcher` 1 支、`tests/pipi` 4 支 `test_*.py`、`test_extension.js`。結束碼都是 0。
+    - 沒跑：`check_live_anonymous.py`，它會連到真網站。
+  - 人工核對清單逐條都過：
+    - 第 1 節沒有「只走 USB」。
+    - 第 2 節小標題 76 字元，上下各一個空行。
+    - 第 3 節 `try:` 上方有「只檢查、不掛載」的註解。
+    - 第 3、4 節都沒寫前端怎麼處理 `ddi_not_mounted`，也沒寫呼叫端會產生錯誤，或兩個都失敗會怎樣。
+    - 新 docstring 的「over lockdown」跟同函式 fallback 的 log 用詞一致。
+  - 票上寫錯的地方：驗收寫「改完後 `:649` 那處的行號會移動」，實際上相反。
+    - 第 4 節少 1 行，第 3 節多 1 行，所以只有 `:448-592` 之間的行往上移 1 行，`:649` 沒動。
+    - 「要留」裡的 `:557`、`:560`、`:573` 現在是 `:556`、`:559`、`:572`。
+    - 這是 Spec review 發現的，我用 `git grep b345bc8` 對過。
+  - review（Standards、Spec 兩軸）：
+    - Spec：沒有缺漏，沒有 scope creep，也沒有實作錯的地方。
+    - Standards：沒有硬性違規，有兩點判斷題，都是這張票已經決定的事，所以沒改：
+      - `_ensure_personalized_ddi_mounted` 可能是 Mysterious Name，`:592` 的註解是在幫名稱補洞。根本解是改名，已經列在「不做」。
+      - `:653` 的註解寫的是歷史，跟 AGENTS.md「註解只放在不直覺的邏輯」有點擦邊；「iOS 17+ only」也跟下面的區段標題重複。不過這是第 1 節指定的寫法，「要留」也寫了它跟 `backend/api/device.py:20` 一起說明為什麼沒有 `/wifi/connect`。
+  - 範圍外、沒修：沒有新發現。「不做」那五項維持原樣。

@@ -429,7 +429,7 @@ class DeviceManager:
         conn.location_service = loc
         return loc
 
-    async def _ensure_personalized_ddi_mounted(self, conn: _ActiveConnection) -> None:
+    async def _check_personalized_ddi_mounted(self, conn: _ActiveConnection) -> None:
         """Check whether the Personalized DDI is mounted on the iPhone.
 
         v0.2.58 change: LocWarp no longer auto-downloads / auto-mounts
@@ -583,10 +583,8 @@ class DeviceManager:
         If DVT fails (for example the Developer Disk Image is not mounted),
         fall back to ``LegacyLocationService`` over lockdown.
         """
-        # Despite the name, this only checks whether the DDI is mounted
-        # (broadcasting ddi_not_mounted if not); no mounting since v0.2.58.
         try:
-            await self._ensure_personalized_ddi_mounted(conn)
+            await self._check_personalized_ddi_mounted(conn)
         except Exception:
             logger.warning("DDI status check failed; DVT may still fail", exc_info=True)
 

@@ -71,6 +71,7 @@ Type: bug
   - `connect_wifi_tunnel` 只在寫 `_connections` 時拿自己的鎖，RSD 連線在鎖外。
   - 現在兩台的 connect 也可能重疊，只是比較少見。
 - Windows 上每條通道都建一張 wintun 介面，名稱都是 `pymobiledevice3-tunnel`。好幾條同時存在現在就沒問題，但「同時建立」以前沒發生過，只能靠真手機實測確認（見驗收）。
+  - 更正（2026-11-06 真手機第 1 條）：名稱帶 UDID，是 `pymobiledevice3-tunnel-<UDID>`（pymobiledevice3 11.49.5，`tunnel_service.py:758`），每台手機各一張，不同名。
 
 ### 前端：這次有找到的候選排前面
 
@@ -165,6 +166,7 @@ Type: bug
   - 兩支手機的 WiFi 都開著、都沒連著，按 WiFi 掃描：
     - 兩支都連上。
     - 兩條 `WiFi tunnel established` 的時間很接近，RSD 位址不同。介面名稱都是 `pymobiledevice3-tunnel`，不能拿來分辨。
+      - 更正：介面名稱是 `pymobiledevice3-tunnel-<UDID>`，兩條的 `iface=` 也會不同，可以一起拿來分辨。
     - 連上後兩支都瞬移一次，位置都有變：同時建的兩張 wintun 介面都能用。
   - 一支手機正在跑路線時，另一支的連線成功或失敗都不影響它。做法同 wifi-scan-button 01 的第 2 條。
 
@@ -365,3 +367,14 @@ Type: bug
       - 改之前也有這個空檔，只是握手一個接一個，比較難碰到。
       - 前端 `fillFreeSlots` 同時送出的數量不超過「3 − 已連上台數」，自動連線和 WiFi 掃描碰不到。要碰到，得手動連線跟掃描同時進行。
   - 沒做：真手機實測的三條（見驗收），留給使用者。
+- 2026-11-06：真手機實測第 1 條（重做 wifi-scan-button 01 的第 1 條）通過，使用者做的，下面是後端 log。
+  - 情境：另一支手機（`.197`）的 WiFi 關著，A（`.117`）的開著，按 WiFi 掃描。
+  - 偵測：mDNS 沒結果，子網掃描找到 1 台（`.117`）。
+    - A 是「存過、這次也找到」，排第 1 組，Port `[49152, 56165]`，存過的在前。
+    - `.197` 只有存過，排第 3 組。
+  - 兩個請求同時開始：A 的 `WiFi tunnel start` 在 21:36:27.665，排第一個；`.197` 在 27.666，只差 1 ms。
+  - A 在 28.305 建好通道，`start-and-connect` 在 29.33 回 200，從送出到連上約 1.7 秒。
+  - `.197`：28.668 握手逾時，重掃 Port 到 34.729，然後回 500。
+  - A 比 `.197` 回 500 早約 5.4 秒連上。12:59 那次 A 白等了 7.1 秒，這次沒等。
+  - 順便發現介面名稱是 `pymobiledevice3-tunnel-<UDID>`，不是本文寫的 `pymobiledevice3-tunnel`。log：`iface=pymobiledevice3-tunnel-00008140-001A1DE13813C01C`。已在「決定」和「驗收」的對應段落補更正。
+  - 第 2、3 條還沒做。

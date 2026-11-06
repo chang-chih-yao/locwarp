@@ -1,4 +1,4 @@
-# 01 裝置連線：拿掉只寫不讀的 pin_ip_map，和沒人用的舊 lockdownd WiFi 掃描
+# 01 裝置連線：拿掉只寫不讀的 pin_ip_map，和沒人用的舊 lockdownd WiFi 掃描與 WiFi 直連
 
 Status: ready-for-agent
 Blocked by: (none)
@@ -7,10 +7,11 @@ Type: task
 
 ## 為什麼
 
-兩段程式碼都沒有人用。留著沒有害處，但會誤導讀 code 的人：
+三段程式碼都沒有人用。留著沒有害處，但會誤導讀 code 的人：
 
 - `pin_ip_map` 的註解說，開啟 LocWarp 時的自動連線靠它挑出釘選的裝置。其實沒有任何地方讀它。
 - 舊的 lockdownd 掃描叫 `scanWifi`、`wifiScan`、`/wifi/scan`，跟「掃描 WiFi 裝置」按鈕（GLOSSARY：裝置連線）同名，做的卻是另一件事。
+- 舊的 WiFi 直連叫 `connectWifi`、`wifiConnect`，看起來像 WiFi 的連線入口。其實它打的後端路由早就拿掉了，真的呼叫只會失敗，而且請求會落到別的路由。
 
 拿掉之後行為不變。
 
@@ -50,7 +51,7 @@ Type: task
 要拿掉的前端部分：
 
 - `frontend/src/hooks/useDevice.ts`：
-  - import 裡的 `wifiScan`（`:4`）。同一行的 `wifiConnect` 先留著，見「不做」。
+  - import 裡的 `wifiScan`（`:4`）。同一行的 `wifiConnect` 由第 3 節拿掉，兩節做完這一行就整行刪掉。
   - `WifiScanResult` 介面（`:34-39`）。只有這個檔案用到。
   - `wifiScanning`、`wifiDevices` 兩個 state 和上面的註解（`:154-156`）。
   - `scanWifi` 和上面的註解（`:258-274`）。
@@ -72,13 +73,43 @@ Type: task
 - i18n 的 `device.wifi_scan*` 字串：這些是新按鈕的字串。
 - `backend/api/device.py` 其他提到 62078 的地方，例如 `NON_REMOTEPAIRING_PORTS` 和探測用的 Port：這些是 RemotePairing 掃描在用。
 
+## 3. 舊的 WiFi 直連（`/wifi/connect`）只剩前端
+
+現況：
+
+- v0.1.49 拿掉 iOS 17 以前的 WiFi 直連時，只拿掉了後端，前端的呼叫留了下來。
+  - 後端的 `/wifi/connect` 路由和 `DeviceManager.connect_wifi` 都已經不在了。
+  - 前端還留著 `connectWifi` 和 `api.wifiConnect`。
+- 沒有任何畫面呼叫 `connectWifi`。
+- 真的呼叫的話不會回 404：
+  - `POST /api/device/wifi/connect` 會對上 `POST /{udid}/connect`（`backend/api/device.py:1641`），`udid` 變成 `"wifi"`。
+  - 後端會去連 UDID 是 `wifi` 的裝置，找不到就回錯誤，`connectWifi` 再把錯誤往上拋。
+  - 這是讀 code 推出來的，沒有實際打過。
+- iOS 17 以後的 WiFi 連線走 `startWifiTunnel`、`findAndConnectWifi`，跟它無關。
+
+要拿掉：
+
+- `frontend/src/hooks/useDevice.ts`：
+  - import 裡的 `wifiConnect`（`:4`）。
+  - `connectWifi`（`:233-256`）。
+  - 回傳物件裡的 `connectWifi`（`:612`）。
+- `frontend/src/services/api.ts:126` 的 `wifiConnect`。
+
+要留：
+
+- `connectWifi` 裡用到的 `setConnectedDevice`、`setDevices`、`DeviceInfo`：其他地方還在用。
+- 後端兩段「v0.1.49 已拿掉」的註解：`backend/api/device.py:20` 和 `backend/core/device_manager.py:655-656`。它們寫的是後端為什麼沒有這個路由、這個方法，跟前端這次清掉的程式碼無關。
+- `DeviceManager.connect_wifi_tunnel`，以及 `tests/device/test_wifi_skip_connected.py` 的同名假方法：這是 iOS 17 以後的 WiFi 通道在用，只是名字開頭一樣。
+
 ## 驗收
 
 - 搜尋時排除 `.scratch/`、`.venv/`、`.cache/`、`node_modules/`，以下名稱都要找不到：
   - `pin_ip_map`、`PIN_IP_MAP_KEY`、`readSavedEntryFor`
   - `scanWifi`、`WifiScanResult`、`wifiDevices`、`api.wifiScan`、`/wifi/scan`
   - `scan_wifi_devices`、`_load_pair_record`、`_guess_local_subnet`、`create_using_tcp`
+  - `connectWifi`、`wifiConnect`。搜尋要分大小寫，`findAndConnectWifi` 要留。
   - `useDevice.ts` 裡也不能再有 `wifiScanning`。`DeviceStatus.tsx` 的那個要留。
+  - `/wifi/connect` 只能剩 `backend/api/device.py:20` 那行註解。`connect_wifi` 只能剩 `device_manager.py` 的那段註解，加上 `connect_wifi_tunnel`。
 - `frontend` 的 `npm run build` 要過。它會先跑 `tsc`，還有地方用到拿掉的東西就會編譯不過。
 - 現有測試都要過，而且 0 skipped：
   - 前端：`tests/frontend/` 用 `node --test` 跑。
@@ -91,14 +122,13 @@ Type: task
   - 後端要起得來，`GET /api/device/wifi/scan` 要回 404。
 - Commit：
   - 開票用 `.scratch:`。
-  - 實作用 `裝置連線:`，兩件事各一個 commit，方便個別 revert。
+  - 實作用 `裝置連線:`，三節各一個 commit，方便個別 revert。第 2、3 節都會改到 `useDevice.ts:4` 那行 import，後做的那個 commit 把整行刪掉。
   - 結果用 `.scratch:`。
 
 ## 不做
 
-- `connectWifi`（`useDevice.ts:233-256`）和 `api.wifiConnect`（`api.ts:126`）：
-  - 它們也沒有人呼叫，而且打的 `/wifi/connect` 後端在 v0.1.49 就拿掉了，見 `backend/api/device.py:20` 的註解。
-  - 這是開這張票時另外發現的，不在指定的範圍內。要一起清的話，由使用者決定移到上面，否則另開一張票。
 - 使用者瀏覽器裡已經存在的 `pin_ip_map` key：沒有人讀它，留著也不影響。
 
 ## Comments
+
+- 2026-11-06：使用者決定把 `connectWifi`、`api.wifiConnect` 移進範圍，成為第 3 節。開票時它們列在「不做」，因為不在原本指定的兩件事裡。

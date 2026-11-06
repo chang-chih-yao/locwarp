@@ -2,8 +2,8 @@ import { DeviceChip, type DeviceLetter } from './DeviceChip'
 import { useT } from '../i18n'
 import type { DeviceInfo } from '../hooks/useDevice'
 import type { RuntimesMap } from '../hooks/useSimulation'
+import { MAX_DEVICES } from '../wifiCandidates'
 
-const MAX_DEVICES = 3
 const LETTERS: DeviceLetter[] = ['A', 'B', 'C']
 
 interface Props {

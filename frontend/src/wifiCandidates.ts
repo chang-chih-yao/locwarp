@@ -69,10 +69,11 @@ export function needsDiscovery(mode: ConnectMode, pinnedUdids: ReadonlyArray<str
 }
 
 /**
- * The addresses to start a WiFi 通道 on, best first.
+ * The addresses to start a WiFi 通道 on, best first. Not capped:
+ * `fillFreeSlots` decides how many get tried.
  *
  * @param input everything known about the LAN and the devices right now.
- * @returns at most `MAX_DEVICES` minus the connected count, saved addresses first.
+ * @returns every candidate, saved addresses first.
  */
 export function wifiCandidates(input: CandidateInput): WifiCandidate[] {
   const pinsOnly = !needsDiscovery(input.mode, input.pinnedUdids);
@@ -117,12 +118,47 @@ export function wifiCandidates(input: CandidateInput): WifiCandidate[] {
   for (const d of discovered) {
     add(d.ip, [d.port, ...(d.ports || [])], d.method === 'mdns' ? 'mdns' : 'subnet');
   }
-  // Saved addresses were added first, so the cap keeps them over discovery.
-  return out.slice(0, Math.max(0, MAX_DEVICES - input.connectedUdids.length));
+  return out;
 }
 
 /** What one candidate's start-and-connect request came back with. */
 export type CandidateOutcome = 'connected' | 'already_connected' | 'failed';
+
+/**
+ * Tries the candidates best first, one slot per device the cap still
+ * allows, the slots in parallel.
+ *
+ * A slot whose candidate answers `already_connected` moves on to the next
+ * one. That answer comes from a phone that is connected already, typically
+ * a USB phone also on this WiFi, whose mDNS hit has no UDID to skip it by,
+ * and it shouldn't cost a phone still waiting its turn (Q12: group users
+ * don't regress). Any other outcome ends the slot. A failure isn't followed
+ * by the next candidate, because a subnet-scan host that isn't an iPhone
+ * can hold its request for the full 45 s.
+ *
+ * @param candidates in the order to try, as `wifiCandidates` returns them.
+ * @param connectedCount devices connected before this pass, USB and WiFi.
+ * @param attempt starts one candidate; resolves with its outcome, never throws.
+ * @returns every attempt's result, in completion order.
+ */
+export async function fillFreeSlots<C, R extends { outcome: CandidateOutcome }>(
+  candidates: ReadonlyArray<C>,
+  connectedCount: number,
+  attempt: (candidate: C) => Promise<R>,
+): Promise<R[]> {
+  let next = 0;
+  const results: R[] = [];
+  const slot = async () => {
+    while (next < candidates.length) {
+      const r = await attempt(candidates[next++]);
+      results.push(r);
+      if (r.outcome !== 'already_connected') return;
+    }
+  };
+  const slots = Math.max(0, MAX_DEVICES - connectedCount);
+  await Promise.all(Array.from({ length: slots }, slot));
+  return results;
+}
 
 /** A WiFi 掃描's result as the button reports it. */
 export interface WifiScanTally {

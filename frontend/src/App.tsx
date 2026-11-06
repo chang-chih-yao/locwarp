@@ -387,6 +387,8 @@ const App: React.FC = () => {
   // handshake the same phone while the pass is pending or in flight.
   const [autoConnectRunning, setAutoConnectRunning] = useState(false)
   const [autoConnectDone, setAutoConnectDone] = useState(false)
+  // The other direction: a WiFi 掃描 pressed before the WS first came up.
+  const wifiScanInFlightRef = useRef(false)
   useEffect(() => {
     if (!ws.connected) return
     if (wifiAutoConnectAttemptedRef.current) return
@@ -402,6 +404,13 @@ const App: React.FC = () => {
       // Claimed only once it runs: a WS drop that clears the timer lets the
       // next connect schedule the attempt again.
       wifiAutoConnectAttemptedRef.current = true
+      if (wifiScanInFlightRef.current) {
+        // That scan already covers this pass: it ignores pins and skips the
+        // same phones. Running both would handshake one phone twice.
+        setAutoConnectRunning(false)
+        setAutoConnectDone(true)
+        return
+      }
       device.findAndConnectWifi('auto')
         .catch(() => { /* silent, see above */ })
         .finally(() => {
@@ -425,9 +434,14 @@ const App: React.FC = () => {
   const handleWifiScan = useCallback(async () => {
     setWifiScanPressed(true)
     setLastWifiScan(null)
-    const res = await device.findAndConnectWifi('scan')
-    setLastWifiScan(res)
-    return res
+    wifiScanInFlightRef.current = true
+    try {
+      const res = await device.findAndConnectWifi('scan')
+      setLastWifiScan(res)
+      return res
+    } finally {
+      wifiScanInFlightRef.current = false
+    }
   }, [device.findAndConnectWifi])
 
   // Poll cooldown

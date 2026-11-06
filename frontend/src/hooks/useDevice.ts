@@ -12,8 +12,8 @@ import {
 } from '../utils/savedTunnelIps'
 import { getHostPrefix } from '../utils/hostNetwork'
 import {
-  wifiCandidates, tallyWifiResults, needsDiscovery,
-  type ConnectMode, type CandidateOutcome, type DiscoveredInput, type WifiScanTally,
+  wifiCandidates, fillFreeSlots, tallyWifiResults, needsDiscovery,
+  type ConnectMode, type CandidateOutcome, type CandidateSource, type DiscoveredInput, type WifiScanTally,
 } from '../wifiCandidates'
 
 export interface DeviceInfo {
@@ -50,6 +50,16 @@ export interface FindAndConnectResult extends WifiScanTally {
   /** Connected devices (USB and WiFi) once the pass ended. */
   connectedAfter: number
 }
+
+/** One candidate's start-and-connect, as findAndConnectWifi tallies it. */
+interface CandidateResult {
+  sources: CandidateSource[]
+  outcome: CandidateOutcome
+  udid: string | undefined
+}
+
+const connectedUdidsOf = (list: DeviceInfo[]): string[] =>
+  list.filter((d) => d.is_connected).map((d) => d.udid)
 
 // Saved tunnel addresses, plus the single-IP keys older builds wrote for
 // users who upgraded before savedips existed. That fallback has no UDID.
@@ -141,6 +151,7 @@ export function useDevice(subscribe?: WsSubscribe) {
     })
   }, [subscribe])
   const [scanning, setScanning] = useState(false)
+  // Legacy lockdownd scan state, see scanWifi below. Not the WiFi 掃描 button.
   const [wifiScanning, setWifiScanning] = useState(false)
   const [wifiDevices, setWifiDevices] = useState<WifiScanResult[]>([])
 
@@ -244,6 +255,9 @@ export function useDevice(subscribe?: WsSubscribe) {
     [],
   )
 
+  // Legacy lockdownd scan (/wifi/scan), left over from the pre-iOS 17 direct
+  // WiFi connect removed in v0.1.49. Nothing calls it; pending cleanup. The
+  // WiFi 掃描 button (GLOSSARY.md: 裝置連線) is findAndConnectWifi.
   const scanWifi = useCallback(async () => {
     setWifiScanning(true)
     try {
@@ -513,7 +527,7 @@ export function useDevice(subscribe?: WsSubscribe) {
           .catch((): DiscoveredInput[] => [])
         : Promise.resolve<DiscoveredInput[]>([]),
     ])
-    const connectedUdids = devicesRef.current.filter((d) => d.is_connected).map((d) => d.udid)
+    const connectedUdids = connectedUdidsOf(devicesRef.current)
     const candidates = wifiCandidates({
       mode,
       savedIps: savedIpsForPrefix(readSavedIpsWithLegacy(), hostPrefix),
@@ -522,24 +536,20 @@ export function useDevice(subscribe?: WsSubscribe) {
       tunnelIps: (status?.tunnels || []).map((tn) => tn.target_ip).filter((x): x is string => !!x),
       pinnedUdids,
     })
-    // Parallel so unreachable addresses don't queue up client-side. The
-    // backend still runs them one after another (_tunnels_lock).
-    const results = await Promise.all(candidates.map(async (c) => {
-      let outcome: CandidateOutcome
-      let udid: string | undefined
+    // The backend still runs the parallel requests one after another
+    // (_tunnels_lock).
+    const results = await fillFreeSlots(candidates, connectedUdids.length, async (c): Promise<CandidateResult> => {
       try {
         const r = await startWifiTunnel(c.ip, c.ports[0], c.udid, c.ports.slice(1), true)
-        outcome = r.status
-        udid = r.udid
+        return { sources: c.sources, outcome: r.status, udid: r.udid }
       } catch {
-        outcome = 'failed'
+        return { sources: c.sources, outcome: 'failed', udid: undefined }
       }
-      return { sources: c.sources, outcome, udid }
-    }))
+    })
     // The count at the end of the pass, not "before + new": a USB phone may
     // have been plugged in meanwhile. This pass's own connections may not
     // have rendered into devicesRef yet, so they are added by UDID.
-    const after = new Set(devicesRef.current.filter((d) => d.is_connected).map((d) => d.udid))
+    const after = new Set(connectedUdidsOf(devicesRef.current))
     for (const r of results) if (r.outcome === 'connected' && r.udid) after.add(r.udid)
     return { ...tallyWifiResults(results), connectedAfter: after.size }
   }, [startWifiTunnel])

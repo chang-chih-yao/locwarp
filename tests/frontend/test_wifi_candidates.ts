@@ -7,8 +7,8 @@
 // .scratch/wifi-scan-button/issues/01-wifi-scan-button.md.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tallyWifiResults, wifiCandidates } from '../../frontend/src/wifiCandidates.ts';
-import type { CandidateInput } from '../../frontend/src/wifiCandidates.ts';
+import { fillFreeSlots, tallyWifiResults, wifiCandidates } from '../../frontend/src/wifiCandidates.ts';
+import type { CandidateInput, CandidateOutcome } from '../../frontend/src/wifiCandidates.ts';
 
 const NONE: CandidateInput = {
   mode: 'scan',
@@ -147,16 +147,61 @@ test('同一個 IP 只出一個候選：Port 合併、存過的在前，來源�
   ]);
 });
 
-test('候選數最多 3 − 已連上裝置數，存過的 IP 優先', () => {
-  const discovered = [
-    { ip: '192.168.1.41', port: 50000, method: 'mdns' },
-    { ip: '192.168.1.42', port: 50000, method: 'mdns' },
-    { ip: '192.168.1.43', port: 50000, method: 'mdns' },
-  ];
-  const savedIps = [{ ip: '192.168.1.40', port: 49152, udid: 'S', lastUsed: 1 }];
-  assert.deepEqual(ips({ connectedUdids: ['U1'], savedIps, discovered }), ['192.168.1.40', '192.168.1.41']);
-  assert.deepEqual(ips({ connectedUdids: [], savedIps, discovered }), ['192.168.1.40', '192.168.1.41', '192.168.1.42']);
-  assert.deepEqual(ips({ connectedUdids: ['U1', 'U2', 'U3'], savedIps, discovered }), []);
+test('存過的 IP 排在偵測結果前面；候選不截斷，超過名額的留給 fillFreeSlots 補位', () => {
+  assert.deepEqual(
+    ips({
+      connectedUdids: ['U1'],
+      savedIps: [{ ip: '192.168.1.40', port: 49152, udid: 'S', lastUsed: 1 }],
+      discovered: [
+        { ip: '192.168.1.41', port: 50000, method: 'mdns' },
+        { ip: '192.168.1.42', port: 50000, method: 'mdns' },
+        { ip: '192.168.1.43', port: 50000, method: 'mdns' },
+      ],
+    }),
+    ['192.168.1.40', '192.168.1.41', '192.168.1.42', '192.168.1.43'],
+  );
+});
+
+/** Which candidates fillFreeSlots tries, each answering from `outcomes` (default connected). */
+const tried = async (candidates: string[], connectedCount: number, outcomes: Record<string, CandidateOutcome> = {}) => {
+  const order: string[] = [];
+  await fillFreeSlots(candidates, connectedCount, async (c) => {
+    order.push(c);
+    return { outcome: outcomes[c] ?? 'connected' };
+  });
+  return order;
+};
+
+test('名額 = 3 − 已連上裝置數，依候選順序取', async () => {
+  const four = ['A', 'B', 'C', 'D'];
+  assert.deepEqual(await tried(four, 0), ['A', 'B', 'C']);
+  assert.deepEqual(await tried(four, 1), ['A', 'B']);
+  assert.deepEqual(await tried(four, 3), []);
+});
+
+test('回 already_connected 的候選讓出名額給下一個：USB 連著的手機的 mDNS 結果不擠掉別台（Q12 群組不倒退）', async () => {
+  // A is on USB and also answers mDNS, which carries no UDID to skip it by.
+  // One phone connected leaves two slots, and B and C both still need one.
+  assert.deepEqual(await tried(['A_MDNS', 'B', 'C'], 1, { A_MDNS: 'already_connected' }), ['A_MDNS', 'B', 'C']);
+});
+
+test('連線失敗照樣佔住名額、不往下試：子網掃描到的非 iPhone 主機一台最多耗 45 秒', async () => {
+  assert.deepEqual(await tried(['X', 'Y'], 2, { X: 'failed' }), ['X']);
+});
+
+test('名額內平行送，同時進行的請求數不超過名額', async () => {
+  // Never more than the free slots in flight, so the backend's device cap
+  // holds; all at once within them, so dead addresses don't queue up here.
+  let inFlight = 0;
+  let peak = 0;
+  const results = await fillFreeSlots(['A', 'B', 'C', 'D'], 1, async () => {
+    peak = Math.max(peak, ++inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight--;
+    return { outcome: 'already_connected' as const };
+  });
+  assert.equal(results.length, 4);
+  assert.equal(peak, 2);
 });
 
 test('統計：already_connected 不算新連上也不算失敗', () => {

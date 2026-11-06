@@ -1311,7 +1311,12 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
 
     rsd_address = tunnel_result.get("rsd_address")
     rsd_port = tunnel_result.get("rsd_port")
-    temp_key = tunnel_result.get("udid")
+    # The identifier whose pair-verify succeeded, which the runner is keyed
+    # by. _build_tunnel_udid_candidates tries connected devices' UDIDs before
+    # cached pair records, so a connected phone is tried under its own UDID
+    # first. The "pending:ip:port" placeholder only appears when no UDID was
+    # known at all.
+    tunnel_udid = tunnel_result.get("udid")
 
     if not rsd_address or not rsd_port:
         raise HTTPException(status_code=500, detail="Tunnel started but no RSD info available")
@@ -1320,14 +1325,14 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
     # Must be decided here, on the UDID the tunnel resolved, not on the one
     # connect_wifi_tunnel returns: by then it has already disconnected that
     # UDID's USB link or WiFi engine.
-    if req.skip_connected and temp_key in dm._connections:
+    if req.skip_connected and tunnel_udid in dm._connections:
         if tunnel_result.get("status") == "started":
             # Opened only to learn who answers at this IP (e.g. a USB phone
             # that is also on the WiFi). Close just the tunnel and keep the
             # device connection, which _cleanup_wifi_connection_for would cut.
             async with _tunnels_lock:
-                await _tear_down_tunnel(temp_key, caller="start_and_connect_skip_connected")
-        return {"status": "already_connected", "udid": temp_key}
+                await _tear_down_tunnel(tunnel_udid, caller="start_and_connect_skip_connected")
+        return {"status": "already_connected", "udid": tunnel_udid}
     if len(dm._connections) >= MAX_DEVICES:
         raise HTTPException(
             status_code=409,
@@ -1348,12 +1353,13 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
         app_state.simulation_engines.pop(info.udid, None)
         await app_state.create_engine_for_device(info.udid)
 
-        # Re-key the runner from temp_key (often "pending:ip:port") to
-        # the real udid so per-udid stop / status / watchdog keep working.
-        if temp_key and temp_key != info.udid:
+        # Re-key the runner from tunnel_udid (e.g. the "pending:ip:port"
+        # placeholder) to the real udid so per-udid stop / status / watchdog
+        # keep working.
+        if tunnel_udid and tunnel_udid != info.udid:
             async with _tunnels_lock:
-                runner = _tunnels.pop(temp_key, None)
-                old_wd = _tunnel_watchdogs.pop(temp_key, None)
+                runner = _tunnels.pop(tunnel_udid, None)
+                old_wd = _tunnel_watchdogs.pop(tunnel_udid, None)
                 if old_wd is not None and not old_wd.done():
                     old_wd.cancel()
                 if runner is not None and runner.is_running():
@@ -1390,10 +1396,10 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
     except Exception as e:
         # On failure, tear down the runner we just started so we don't
         # leave a zombie tunnel + leaked watchdog.
-        if temp_key:
+        if tunnel_udid:
             try:
                 async with _tunnels_lock:
-                    await _tear_down_tunnel(temp_key, caller="start_and_connect_failed")
+                    await _tear_down_tunnel(tunnel_udid, caller="start_and_connect_failed")
             except Exception:
                 pass
         raise HTTPException(status_code=500, detail=f"Tunnel started but connection failed: {e}")

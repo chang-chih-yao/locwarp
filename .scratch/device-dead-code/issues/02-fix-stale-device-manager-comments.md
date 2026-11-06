@@ -3,21 +3,22 @@
 Status: ready-for-agent
 Blocked by: (none)
 Type: task
-相關：`.scratch/device-dead-code/issues/01-remove-pin-ip-map-and-lockdownd-scan.md`。第 1 節是 01 號票的 Standards review 發現的。01 號票寫明那段註解要留，所以另開這張。第 2、3 節是開這張票時另外發現，使用者決定併進來。
+相關：`.scratch/device-dead-code/issues/01-remove-pin-ip-map-and-lockdownd-scan.md`。第 1 節是 01 號票的 Standards review 發現的。01 號票寫明那段註解要留，所以另開這張。第 2、3 節是開這張票時另外發現，第 4 節是另一個 session 審這張票時發現，都由使用者決定併進來。
 
 ## 為什麼
 
-`backend/core/device_manager.py` 有三處說明跟程式碼對不上，讀 code 的人會被誤導：
+`backend/core/device_manager.py` 有四處說明跟程式碼對不上，讀 code 的人會被誤導：
 
 - 第 1、2 節：兩段註解說 iOS 17 以下的路在 v0.1.49 拿掉了，但它們就緊接在給 iOS 16 用的函式旁邊。
   - 讀的人會以為 iOS 16 不支援，或以為旁邊的函式是沒清乾淨的殘骸。
   - 這跟 01 號票裡 `DeviceStatus.tsx` 那行 iOS 16 註解是同一段歷史：v0.1.49 拿掉 iOS 16 支援，隔天的 `d512094` 又加回來。
 - 第 3 節：`_create_dvt_location_service` 的 docstring、註解和一行 warning 還說 iOS 17+ 會自動掛載 personalized DDI。
   - v0.2.58（`051de0e`）起，LocWarp 不再掛載，只檢查有沒有掛好。
+- 第 4 節：`_ensure_personalized_ddi_mounted` 的 docstring 說 DDI 沒掛好時，前端會提示使用者，呼叫端會給出清楚的錯誤。這兩件事現在都不會發生。
 
-第 1、2 節只改註解。第 3 節除了 docstring 和註解，還改一行 log 訊息的文字。行為都不變。
+第 1、2、4 節只改註解和 docstring，其中第 2 節是把一行註解換成小標題。第 3 節除了 docstring 和註解，還改一行 log 訊息的文字。程式邏輯不變，只有這一行 log 文字會變。
 
-下面的行號都是 `b345bc8` 時的位置，動手前先用 grep 再對一次。
+下面的行號都是 `b345bc8` 時的位置。第 1、3、4 節會改變行數，改完後後面的行號會移動。動手前和驗收時都以內容為準，先用 grep 再對一次。
 
 ## 1. `:653-658` 說 v0.1.49 拿掉了兩個函式
 
@@ -79,11 +80,22 @@ Type: task
 ```
 
 - **錯**：下一個函式就是 `d512094` 加回來、給 iOS 16.x 用的 `_connect_legacy`（`:336`），`:284` 會呼叫它。來源同第 1 節。
+- 這個位置原本是小標題：
+  - `91c4f7f^` 的 `:242` 是 `# -- iOS < 17 ---…`，跟同檔 `:201`（現在的 `:293`）的 `# -- iOS 17+ via CoreDeviceTunnelProxy ---…` 是一對。
+  - `91c4f7f` 拿掉函式時，把這個小標題換成現在這行註解。`d512094` 把函式加回來，小標題沒補回來。
+  - 現在檔案裡 `# -- ` 開頭的小標題只剩 `:293` 一個，所以 `_connect_legacy` 看起來就屬於「iOS 17+」那一段。
 
 要改：
 
-- 刪掉 `:334` 這行，連同下面多出來的空行，方法之間留一個空行，跟檔案其他地方一樣。
-- 不用補新註解：`_connect_legacy` 的 docstring 已經寫了它是給 iOS 16.x 的，`connect()` 的 docstring 也列了兩條路。
+- 把 `:334` 換成跟 `:293` 成對的小標題，前後的空行不動。寬度跟 `:293` 一樣是 76 個字元：
+
+```python
+    # -- iOS 16.x via usbmux lockdown --------------------------------------
+```
+
+- 不要整行刪掉。刪掉的話，`_connect_legacy` 會落在 `:293` 的「iOS 17+」小標題底下，一樣會誤導人。
+- 這是把原本的結構補回來，不是新加說明，所以不違反 AGENTS.md「註解只放在不直覺的邏輯」。`_connect_legacy` 的 docstring 已經寫了它是給 iOS 16.x 的，不用再補別的註解。
+- 這一節只改一行，行號不會移動。
 
 ## 3. `_create_dvt_location_service` 還說會自動掛載 personalized DDI
 
@@ -108,8 +120,9 @@ Type: task
 逐句對過：
 
 - `:590-591`「DDI 沒掛載時自動掛載、重試一次」：**錯**。
-  - 掛載：v0.2.58（`051de0e`，drop DDI auto-mount）起，`_ensure_personalized_ddi_mounted`（`:432`）只檢查。沒掛好的話，它會廣播 `ddi_not_mounted` 給前端，然後照樣返回，見它的 docstring 和 `:504-519`。
-  - 重試：現在沒有。v0.2.58 前一版（`051de0e^`）也沒有。DVT 失敗就在 `:620-640` 退回 `LegacyLocationService`，兩個都失敗就把 DVT 的例外丟出去。
+  - 掛載：v0.2.58（`051de0e`，drop DDI auto-mount）起，`_ensure_personalized_ddi_mounted`（`:432`）只檢查。沒掛好的話，它會廣播 `ddi_not_mounted` 給前端，然後照樣返回，見 `:504-519`。
+  - 重試：現在沒有。v0.2.58 前一版（`051de0e^`）也沒有。DVT 失敗就在 `:620-635` 退回 `LegacyLocationService`。
+  - `:636-640` 寫了「兩個都失敗就把 DVT 的例外丟出去」，但實際上走不到。`LegacyLocationService.__init__`（`backend/services/location_service.py:244-247`）只存三個欄位，建構時不會丟例外。見「不做」。
 - `:593`「Try to mount DDI proactively」：**錯**，同上。
 - `:597` 的 warning「DDI auto-mount failed」：**錯**。
   - 會走到這裡的，是檢查本身丟了沒預期的例外。`_ensure_personalized_ddi_mounted` 自己已經接住 import 失敗和查詢失敗（`:471-493`）。
@@ -117,12 +130,13 @@ Type: task
 
 要改：
 
-- docstring：寫 DVT 失敗時退回 `LegacyLocationService`，不寫自動掛載、不寫重試。
-- `:593` 的註解：寫明它只檢查、沒掛好時會通知前端，不會掛載。
+- docstring：寫 DVT 失敗時退回 `LegacyLocationService`。不寫自動掛載、不寫重試，也不寫兩個都失敗會怎樣。
+- `:593` 的註解：寫明它只檢查、不會掛載，沒掛好時會廣播 `ddi_not_mounted`。
   - 這行註解要留著：函式名稱是 `ensure`，看起來像會掛載，這件事不直覺。
-- `:597` 的 warning：改成「檢查失敗」的意思，例如「DDI status check failed; DVT may still fail」。
+  - 不要寫前端收到事件後會怎樣，例如「會告訴 UI」「會提示使用者」。前端從 v0.2.96 起只會關掉進度遮罩，見第 4 節。
+- `:597` 的 warning：文字定為 `DDI status check failed; DVT may still fail`，驗收會搜這段字串。
   - 這是 log 訊息，改了之後 log 內容會變。查過 repo 裡沒有別的地方依賴這段文字。
-- 參考寫法。實作時可以改字，但意思要對：
+- 參考寫法。docstring 和註解實作時可以改字，但意思要對；warning 文字照抄：
 
 ```python
         """Spin up a DVT provider and hand it to ``DvtLocationService``.
@@ -130,12 +144,51 @@ Type: task
         If DVT fails (for example the Developer Disk Image is not mounted),
         fall back to ``LegacyLocationService`` over lockdown.
         """
-        # Despite the name, this only checks whether the DDI is mounted and
-        # tells the UI if it isn't; LocWarp stopped mounting it in v0.2.58.
+        # Despite the name, this only checks whether the DDI is mounted
+        # (broadcasting ddi_not_mounted if not); no mounting since v0.2.58.
         try:
             await self._ensure_personalized_ddi_mounted(conn)
         except Exception:
             logger.warning("DDI status check failed; DVT may still fail", exc_info=True)
+```
+
+## 4. `_ensure_personalized_ddi_mounted` 的 docstring 說前端會提示、呼叫端會給清楚的錯誤
+
+現況（`:442-447`）：
+
+```python
+        This method is therefore a pure status check. If the iPhone
+        has DDI mounted we log it and return happily. If not, we emit
+        a WS event so the UI can tell the user to mount it via another
+        tool, and we return anyway — the caller (`_create_dvt_location_service`)
+        will then attempt DVT directly and produce a clean error if
+        dtservicehub isn't advertised.
+```
+
+逐句對過：
+
+- 「pure status check」、掛好了就記 log 返回、沒掛好也照樣返回：**對**。見 `:459-469`、`:495-502`、`:504-519`。
+- 「emit a WS event so the UI can tell the user to mount it」：**錯**。
+  - 後端確實會廣播 `ddi_not_mounted`（`:511`），還附了一段中文 `hint`。
+  - v0.2.58 寫這段時，前端會把 `hint` 顯示成錯誤訊息。v0.2.96（`3fe4d69`）起，前端收到後只關掉進度遮罩，不提示使用者，`hint` 也沒人讀了，見 `frontend/src/hooks/useSimulation.ts:578-588`。
+- 「the caller will then attempt DVT directly and produce a clean error if dtservicehub isn't advertised」：**錯**。
+  - 呼叫端 DVT 失敗時會退回 `LegacyLocationService`（`:620-635`）。它的建構子不會丟例外（見第 3 節），所以這一步不會產生錯誤。`DtSimulateLocation` 要等到 `_ensure_service`（`location_service.py:249`）才建立，錯誤要到真的送位置時才會出現。
+  - 這句是 v0.2.58（`051de0e`）寫的。那時退回 Legacy 的機制已經在了（`accfd76`，v0.1.34），所以一寫下來就不對。
+
+要改：
+
+- 只改 `:443` 的「If not」到 `:447`。第一句和前後兩段（`:433-442`、`:449-455`）是對的，不動。
+- 改寫成：沒掛好時廣播 `ddi_not_mounted`，然後照樣返回；呼叫端照樣試 DVT，失敗就退回 `LegacyLocationService`。
+- 不要描述前端收到事件後怎麼處理。這段就是因為後端 docstring 寫了前端的行為，前端一改就過時了。
+- 不要寫呼叫端會產生錯誤，也不要寫兩個都失敗會怎樣。
+- 參考寫法。實作時可以改字，但意思要對：
+
+```python
+        This method is therefore a pure status check. If the iPhone
+        has DDI mounted we log it and return happily. If not, we
+        broadcast `ddi_not_mounted` and return anyway; the caller
+        (`_create_dvt_location_service`) still tries DVT and falls back
+        to `LegacyLocationService` if DVT fails.
 ```
 
 ## 要留
@@ -146,11 +199,13 @@ Type: task
   - 會看到這句的是 iOS 16 以下的裝置。v0.1.49 以前沒有版本下限，iOS 17 以下都走 legacy。從 v0.1.49 起，iOS 16 以下就一直不支援，所以對看到它的人來說是對的。
   - 這是使用者看得到的字串，改了就是改行為。
 - iOS 16 的 classic DDI 真的會自動掛載（`_ensure_classic_ddi_mounted`），所以這些都是對的：
+  - `:557` 的「No classic DDI auto-mount helper found」。
   - `:560` 的「attempting auto-mount」。
   - `:573`、`:649` 的「Classic DDI auto-mount failed」。
 - personalized DDI 那邊已經是對的：
   - `:435` 的「v0.2.58 change: LocWarp no longer auto-downloads / auto-mounts」。
   - `:505-506` 的「LocWarp will not auto-mount」。
+  - 第 4 節那個 docstring 的其他部分（`:433-442`、`:449-455`）。
 - `frontend/src/hooks/useSimulation.ts:581` 的「DDI auto-mounted by a prior tool」：說的是被別的工具掛好，是對的。
 
 ## 驗收
@@ -165,27 +220,43 @@ Type: task
     - 開頭要帶雙引號，只對得到 `:597` 的 log 字串。
     - 不帶引號的話，`:649` 的「Classic DDI auto-mount failed;」也會搜到。
   - `retry once`，只搜 `backend/core/device_manager.py`。`backend/services/pipi_mushroom.py` 也有這個詞，跟這張無關。
+  - `tell the user to mount`
+  - `clean error`
+- 以下都要剛好找到 1 處，在 `backend/core/device_manager.py`：
+  - `'"DDI status check failed; DVT may still fail"'`：第 3 節的 warning。
+  - `'# -- iOS 16.x via usbmux lockdown -'`：第 2 節的小標題，它下面第一個非空行要是 `def _connect_legacy(`。
 - 以下名稱只能剩指定的那幾處：
   - `git grep -nw connect_wifi -- ':!.scratch'` 只剩第 1 節改寫後的那行註解。
-  - `git grep -n "Classic DDI auto-mount failed" -- ':!.scratch'` 還是 2 處（`:573`、`:649`）。
-- 改動範圍：`git diff -U0` 只能有三處 hunk。
-  - 第 2 節的 `:334` 那行和它下面的空行。
-  - 第 3 節的 `:588-597`：docstring、註解、warning。
-  - 第 1 節的 `:653-658` 註解。
-  - 除了 `:597` 那行 warning，改到的內容行都只能是註解或 docstring。
+  - `git grep -n "Classic DDI auto-mount failed" -- ':!.scratch'` 還是 2 處，也就是 `b345bc8` 的 `:573`、`:649`。改完後 `:649` 那處的行號會移動。
+- 改動範圍：
+  - `git diff b345bc8 --stat -- ':!.scratch'` 只能有 `backend/core/device_manager.py`。
+  - `git diff b345bc8 -U0 -- backend/core/device_manager.py` 的每個 hunk，舊行範圍（`@@ -a,b` 的第 a 行到第 a+b-1 行）都要落在下面這些範圍裡，而且每一節都要有改到：
+    - 第 2 節：`334`。
+    - 第 4 節：`443-447`。
+    - 第 3 節：`590-591`、`593`、`597`。
+    - 第 1 節：`653-658`。
+    - b 是 0 的純新增，新內容接在第 a 行後面，第 a 行要在上面的範圍裡，或是某個範圍的前一行。
+  - 不要用 hunk 數來驗：`-U0` 不帶上下文，沒改的 `:592`、`:594-596` 會把第 3 節切成三段，hunk 數也會跟著改寫的行數變。
+  - 除了 `597` 那行 warning，改到的內容都只能是註解、docstring 或第 2 節的小標題。
 - `.venv/Scripts/python.exe -I -c "import sys; sys.path.insert(0, 'backend'); import core.device_manager"` 要成功。
   - 這一步要另外跑：`tests/device` 用的 `api.device` 是在函式裡才 import `core.device_manager`，跑測試不一定會載入它。
+- 人工核對 grep 驗不到的：
+  - 第 1 節改寫後的意思是：`connect_wifi` 在 v0.1.49 拿掉；iOS 16 經由 usbmux（`_connect_legacy`）；WiFi 通道只有 iOS 17+。沒有「只走 USB」。
+  - 第 2 節的小標題寬度是 76 個字元，跟 `:293` 一樣，上下各一個空行。
+  - 第 3 節的 `try:` 上方還有註解，說明只檢查、不掛載。docstring 寫的是退回 Legacy，沒有掛載、重試、兩個都失敗的說法。
+  - 第 3、4 節都沒有描述前端收到 `ddi_not_mounted` 後怎麼處理，也沒有說呼叫端會產生錯誤。
 - 現有測試都要過，而且 0 skipped：
   - 前端：`tests/frontend/` 用 `node --test` 跑。
   - 後端：`tests/device/` 三支、`tests/launcher/` 一支、`tests/pipi/` 的 `test_*.py`，加上 `node tests/pipi/test_extension.js`。
   - `tests/pipi/check_live_anonymous.py` 會連到真網站，不用跑，但要寫明沒跑。
-- 不加新測試：只改說明文字和一行 log 文字，沒有行為可以鎖，mutation check 也套用不上。grep 和 import 就是這張的檢查。
+- 不加新測試：只改說明文字和一行 log 文字，沒有行為可以鎖，mutation check 也套用不上。grep、範圍檢查、import 和人工核對就是這張的檢查。
 - Commit：
   - 開票用 `.scratch:`。
   - 實作用 `裝置連線:`，依原因分兩個 commit，每個 commit 單獨跑上面的 import 都要成功：
-    - 第 1、2 節：v0.1.49 留下、`d512094` 之後不對的兩段註解。
-    - 第 3 節：v0.2.58 之後不對的 DDI 自動掛載說法。這個 commit 改了 log 文字，分開才能單獨 revert。
-    - 第 1 節改寫時會一起拿掉「personalized DDI mount path」那句，所以第 3 節的 commit 不會再碰 `:653-658`。
+    - 第 1、2 節：v0.1.49 留下、`d512094` 之後就不對的兩段說明。
+      - 第 1 節改寫時會一起拿掉 v0.2.58 才變錯的「personalized DDI mount path」那句。commit 訊息要寫到這件事，不然看這個 commit 只會看到 v0.1.49 的理由。
+      - 所以第二個 commit 不會再碰 `:653-658`。
+    - 第 3、4 節：v0.2.58 改成只檢查、不掛載之後就不對的 DDI 說明，前端那句是 v0.2.96 起才不對。這個 commit 改了 log 文字，分開才能單獨 revert。
   - 結果用 `.scratch:`。
 
 ## 不做
@@ -193,9 +264,29 @@ Type: task
 - 把 `_ensure_personalized_ddi_mounted` 改名，例如 `_check_personalized_ddi_mounted`：
   - 名字裡的 `ensure` 看起來像會掛載，跟它現在只檢查不符。
   - 但改名是程式碼變更，要動呼叫端。這張只改說明文字，靠第 3 節 `:593` 的註解講清楚。
+- `_create_dvt_location_service` 的回傳型別 `-> DvtLocationService`（`:587`）：
+  - 退回時回傳的是 `LegacyLocationService`。兩個都是 `LocationService` 的子類，彼此沒有繼承關係，所以這個型別標錯了。第 3 節新的 docstring 寫著退回 Legacy，跟它放在一起就看得出矛盾。
+  - 改型別是程式碼變更，留給之後的票。
+- `:636-640` 走不到的「Both DVT and legacy location services failed」分支：拿掉是程式碼變更。
+- `ddi_not_mounted` 附的 `hint`（`:513-516`）：前端從 v0.2.96 起就不讀了，但拿掉要改後端送出的內容，是程式碼變更。
+- `:108` `usbmux_lockdown` 的註解「for legacy fallback on iOS 17+」：
+  - 寫得不完整：iOS 16 的 `_connect_legacy`（`:345`）也會設這個欄位，`backend/api/device.py:1606` 的 AMFI 也會用到它。
+  - 但它沒有寫錯。這張只改跟程式碼對不上的說明。
 
 ## Comments
 
 - 2026-11-07：使用者決定把第 2 節（`:334`）和第 3 節（`:591`、`:593`、`:597`）併進來。開票時它們列在「不做」，因為不在原本指定的 `:653-658` 裡。
   - 範圍變大，檔名從 `02-fix-stale-v0149-removed-comment.md` 改成 `02-fix-stale-device-manager-comments.md`，標題和「為什麼」也跟著改。
   - 寫第 3 節時另外查到：v0.2.58 前一版本來就沒有 docstring 說的「retry once」。所以「自動掛載」是 v0.2.58 起才變錯，「重試」則從那時之前就不對。
+- 2026-11-07：另一個 session 審了這張票（`99cdf43` 的版本），提了 9 點。逐條對過程式碼和 git 歷史後全部採納，第 4 節由使用者決定併進來：
+  - 驗收原本寫「`git diff -U0` 只能有三處 hunk」，照參考寫法一定不會過（`-U0` 會切成 5 處），改成檢查每個 hunk 的舊行範圍。
+  - 第 2 節從「整行刪掉」改成補回小標題。`91c4f7f` 把原本的 `# -- iOS < 17 ---` 小標題換成那行註解；整行刪掉的話，`_connect_legacy` 會落在 iOS 17+ 的小標題底下。
+  - 新增第 4 節：`_ensure_personalized_ddi_mounted` docstring 的 `:443-447`。第 3 節參考註解原本寫「tells the UI if it isn't」，也跟著改成只寫會廣播 `ddi_not_mounted`。
+  - 第 3 節補上：`:636-640` 實際上走不到。
+  - 「不做」加了四項：回傳型別、走不到的分支、沒人讀的 `hint`、`:108` 的註解。
+  - warning 文字定死，驗收加上「剛好找到 1 處」的正向檢查和人工核對清單。
+  - 行號會移動，所以驗收改以內容為準。
+  - 「行為都不變」改成「程式邏輯不變，只有這一行 log 文字會變」。
+  - 「要留」補上 `:557`。
+  - 第一個實作 commit 的訊息要提到順手拿掉的「personalized DDI mount path」。
+  - 改完後，把四節參考寫法套在 `device_manager.py` 的暫存副本上試跑：範圍檢查、找不到和剛好找到的搜尋、`connect_wifi` 和 `Classic DDI auto-mount failed` 的處數、小標題寬度與位置、import 都過。

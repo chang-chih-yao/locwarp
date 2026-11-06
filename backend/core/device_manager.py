@@ -441,9 +441,9 @@ class DeviceManager:
 
         This method is therefore a pure status check. If the iPhone
         has DDI mounted we log it and return happily. If not, we
-        broadcast `ddi_not_mounted` and return anyway; the caller
-        (`_create_dvt_location_service`) still tries DVT and falls back
-        to `LegacyLocationService` if DVT fails.
+        broadcast ``ddi_not_mounted`` and return anyway; the caller
+        (``_create_dvt_location_service``) still tries DVT and falls back
+        to ``LegacyLocationService`` if DVT fails.
 
         The authoritative signal is whether the RSD handshake advertises
         DVT's service (com.apple.instruments.dtservicehub): DvtProvider

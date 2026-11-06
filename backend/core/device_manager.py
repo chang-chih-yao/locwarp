@@ -440,11 +440,10 @@ class DeviceManager:
         or an earlier successful mount that iOS is still caching).
 
         This method is therefore a pure status check. If the iPhone
-        has DDI mounted we log it and return happily. If not, we emit
-        a WS event so the UI can tell the user to mount it via another
-        tool, and we return anyway — the caller (`_create_dvt_location_service`)
-        will then attempt DVT directly and produce a clean error if
-        dtservicehub isn't advertised.
+        has DDI mounted we log it and return happily. If not, we
+        broadcast `ddi_not_mounted` and return anyway; the caller
+        (`_create_dvt_location_service`) still tries DVT and falls back
+        to `LegacyLocationService` if DVT fails.
 
         The authoritative signal is whether the RSD handshake advertises
         DVT's service (com.apple.instruments.dtservicehub): DvtProvider
@@ -587,14 +586,15 @@ class DeviceManager:
     ) -> DvtLocationService:
         """Spin up a DVT provider and hand it to ``DvtLocationService``.
 
-        If DVT fails because the Developer Disk Image is not mounted,
-        we try to mount it automatically and retry once.
+        If DVT fails (for example the Developer Disk Image is not mounted),
+        fall back to ``LegacyLocationService`` over lockdown.
         """
-        # Try to mount DDI proactively (fast no-op when already mounted).
+        # Despite the name, this only checks whether the DDI is mounted
+        # (broadcasting ddi_not_mounted if not); no mounting since v0.2.58.
         try:
             await self._ensure_personalized_ddi_mounted(conn)
         except Exception:
-            logger.warning("DDI auto-mount failed; DVT may still fail", exc_info=True)
+            logger.warning("DDI status check failed; DVT may still fail", exc_info=True)
 
         try:
             dvt = DvtProvider(conn.lockdown)

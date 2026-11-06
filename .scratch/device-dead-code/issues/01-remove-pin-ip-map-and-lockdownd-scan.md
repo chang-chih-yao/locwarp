@@ -1,6 +1,6 @@
 # 01 裝置連線：拿掉只寫不讀的 pin_ip_map，和沒人用的舊 lockdownd WiFi 掃描與 WiFi 直連
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: task
 相關：`.scratch/wifi-scan-button/issues/01-wifi-scan-button.md`。第 1、2 節是在那張票發現、記成待清理的。第 3 節是開這張票時另外發現，使用者決定併進來。
@@ -175,3 +175,28 @@ Type: task
 - 2026-11-06：使用者決定再併進第 3 節：
   - `wifi.tab_ios17minus`、`wifi.legacy_unavailable`、`wifi.tab_ios17plus` 三個沒有人用的 i18n 字串。原本只提了前兩個，`tab_ios17plus` 是查的時候另外發現的，使用者同意一起拿掉。
   - 「要留」加上 `DeviceStatus.tsx:224` 的註解。我原本以為它過時、提議改掉，往後查 git 歷史才發現 `d512094` 讓 iOS 16 改走 USB、重新支援，所以這行是對的。寫進「要留」，避免做清理的人犯同樣的錯。
+- 2026-11-07：實作完成，三節各一個 commit，依 1、2、3 的順序：`6902a8b`、`8a03caf`、`6730a1d`。
+  - 驗收 grep：
+    - 清單上的名稱都找不到。`useDevice.ts` 沒有 `wifiScanning`，`DeviceStatus.tsx` 的那個還在。
+    - `wifi/connect` 只剩 `backend/api/device.py:20`。
+    - `-w connect_wifi` 只剩 `device_manager.py:654`。票上寫 `:656`，少的兩行是第 2 節刪掉的 `socket`、`Path` import，是同一行註解。
+    - `^import socket`、`^from pathlib import Path` 都找不到。
+  - build：
+    - 三個 commit 在乾淨的 worktree 各自跑 `npm run build`，都通過。
+    - 反向檢查：在 `6730a1d` 的回傳物件放回 `connectWifi`，tsc 報 TS18004、build 失敗。所以這項檢查抓得到東西。
+  - 測試：
+    - 通過：前端 95/95（0 skipped）、`tests/device` 3 支、`tests/launcher` 1 支、`tests/pipi` 4 支 `test_*.py`、`test_extension.js`。
+    - 沒跑：`check_live_anonymous.py`，它會連到真網站。
+  - 人工驗證，都在 5174 的第二個 Vite 攔截 fetch，沒有用真手機：
+    - [x] 釘選，改動前：savedips 先放一筆假 UDID 的位址。按釘選後 `pin_ip_map` 出現，內容是那個 UDID 對到 `192.168.0.250:49152`；取消釘選後變成 `{}`。這證明檢查抓得到。
+    - [x] 釘選，改動後：同樣的步驟。釘選後 `pinned` 多了那個 UDID，`pin_ip_map` 沒有出現；取消釘選後 `pinned` 拿掉了它，`pin_ip_map` 一樣沒有出現。
+    - [x] 第 3 節之後：連線頁的 WiFi 區塊照常顯示、可以展開，console 沒有錯誤。
+    - [x] 重啟 dev 後端後，`GET /api/device/wifi/scan` 加上一個獨有的 query 標記，回 404。dev 後端的 uvicorn access log 有這筆請求，所以回的是 dev 後端，不是安裝版。`/api/device/list`、`/wifi/host-network` 照常回 200。
+    - dev 後端的 log 裡沒有任何寫入類的 `/api/device/*` 請求。
+  - 驗收的寫法跟實際不同的地方：只攔截 `/wifi/tunnel/status` 做不出通道卡片。
+    - App 載入時不會呼叫 `checkTunnelStatus`。`tunnels` 只有在 `startWifiTunnel` 成功，或收到 WS 的 `tunnel_recovered` 時才會填進去。
+    - 所以這次讓自動連線打攔截下來的 `start-and-connect`，做出假通道，savedips 照票上先放一筆。
+  - review（Standards、Spec 兩軸）：都沒有發現問題，也沒有 scope creep。
+  - 範圍外、沒修：
+    - `device_manager.py:653-658` 的註解說 `_ensure_classic_ddi_mounted`、`_create_legacy_location_service` 在 v0.1.49 拿掉了，其實兩個都還在（`:521`、`:642`），只有 `connect_wifi` 那部分是對的。它們是 `d512094` 讓 iOS 16 改走 USB 時加回來的，跟 `DeviceStatus.tsx` 那行 iOS 16 註解同一次。這張票寫明這段註解要留，所以沒動，待另外開票。這是 Standards review 發現的，我對過程式碼和 git 歷史。
+    - 5174 驗證頁掛載時，`AddressSearch` 會發 `PUT /api/geocode/provider-pref`，把那個 origin 的 geocode 設定寫進 `~/.locwarp/settings.json`：provider 是 `arcgis`，key 是空的。這個檔案跟安裝版共用。這是既有行為，每個前端掛載時都會推自己 localStorage 裡的值，下次開正式版會推回它自己的設定。

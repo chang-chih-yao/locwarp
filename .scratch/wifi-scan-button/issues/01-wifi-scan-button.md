@@ -326,6 +326,10 @@ Type: feature
     - `frontend/src/components/DeviceChipRow.tsx` 還有自己的 `MAX_DEVICES = 3`。保留 `wifiCandidates.ts` 匯出的那個，理由是有測試；`DeviceChipRow` 那份之後改成 import。
   - 跟這張票無關、沒有修：
     - USB 掃描按鈕閃的「找到 n 台裝置」可能少算。`App` 傳的 `onScan={() => { device.scan() }}` 沒有回傳 promise，按鈕在掃描結束前就讀裝置數。驗證時 `/list` 回 2 台，按鈕閃「找到 1 台裝置」。
+      - 2026-11-06 已修，在 `bc0b944`：
+        - 只讓 `onScan` 回傳 promise 還不夠。promise 結束時父元件還沒用新清單重新 render，`DeviceStatus` 從 ref 讀到的是上一次掃描的台數，`/list` 依序回 2、3、1、2 台時閃 1、2、3、1。
+        - 改成 `onScan` 回傳 `device.scan()` 找到的台數，閃的數字直接用它，拿掉 `devicesRef`。
+        - 瀏覽器驗證（`fetch` 全部攔截）：依序閃「找到 2／3／1／2 台裝置」「未偵測到」，都對。這個按鈕沒有自動測試。
 - 2026-11-06：第二次 review。另一個 session 對 `aa79d26`、`b4f9b2f` 做 code review（Standards、Spec 兩軸），依結果修改，實作在 `f0395d4`。
   - 本文改了：
     - Status 從 resolved 改成 ready-for-human：程式碼做完了，但「使用者用真手機實測」都還沒做。實測完再改回 resolved。

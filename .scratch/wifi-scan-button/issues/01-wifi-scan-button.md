@@ -1,6 +1,6 @@
 # 01 裝置連線：新增「掃描 WiFi 裝置」按鈕，自動連線改成逐台跳過已連上的裝置
 
-Status: resolved
+Status: ready-for-human
 Blocked by: (none)
 Type: feature
 
@@ -102,7 +102,9 @@ Type: feature
       - 理由：沒有 UDID 的存檔 IP，前一條擋不到。Port 一樣時後端會回 `already_running`；Port 不一樣時要等滿 45 秒（`TUNNEL_START_BUDGET`）才失敗。
     - 同一個 IP 只出一個候選，Port 合併成一份清單，存過的 Port 在前、偵測到的在後；來源也合併記下來。
       - 理由：同一台手機如果存過的 Port 跟偵測到的不同，現況會變成兩個候選、同時連同一台。第二個在後端會跳過已被占用的 UDID，試完其他配對記錄還會重掃 Port，最多耗 45 秒才失敗。
-    - 候選數最多 = 3 − 已連上裝置數，存過的 IP 排前面。
+    - 候選不截斷，存過的 IP 排前面。實際送出幾個由補位決定（2026-11-06 第二次 review 後改，見 Comments）：
+      - 開「3 − 已連上裝置數」個名額，名額內平行送。
+      - 回 `already_connected` 的候選讓出名額給下一個；連上或失敗就佔住，不往下試。
   - 回報統計也是這個模組裡的純函式（review 3）：
     - 輸入每個候選的結果（`connected`、`already_connected`、失敗）和它的來源，輸出新連上 n 台、連線失敗 m 台。
     - `already_connected` 兩邊都不算。
@@ -115,6 +117,7 @@ Type: feature
       - 不能用 `connect_wifi_tunnel` 回傳的 `info.udid`：那時已經太晚，因為 `connect_wifi_tunnel` 遇到已連上的 UDID 會先 disconnect，USB 連線已經斷了。
     - `status` 是 `already_running`，而且這個 UDID 在 `dm._connections` 裡：直接回 `{"status": "already_connected", "udid": ...}`，不呼叫 `connect_wifi_tunnel`，也不動模擬引擎。
       - 通道還在、裝置連線卻掉了（UDID 不在 `dm._connections`）時，照現在的流程重連，等於順便修復。（review）
+        - 自動連線和 WiFi 掃描走不到這條：前端依「通道手機 IP 跳過」不會送出這種請求。見 Comments（2026-11-06 第二次 review）。
     - `status` 是 `started`，而且這個 UDID 在 `dm._connections` 裡（例如用 USB 連著）：
       - 用 `_tear_down_tunnel` 只收掉剛建的這條通道，要在 `_tunnels_lock` 裡做，跟現有失敗路徑一樣。然後回 `already_connected`。
       - `_tear_down_tunnel` 只停 runner 和 watchdog，不碰裝置連線。不能用 `_cleanup_wifi_connection_for`，它會斷掉裝置連線。
@@ -151,7 +154,12 @@ Type: feature
   - 通道手機 IP 跳過：沒有 UDID 的存檔 IP、mDNS 結果、子網掃描結果都會被擋。
   - 同一個 UDID 只出一個候選，取最新的那筆。
   - 同一個 IP 只出一個候選，Port 合併、存過的在前，來源合併。
-  - 候選數最多 3 − 已連上裝置數，存過的 IP 優先。
+  - 存過的 IP 排在偵測結果前面，候選不截斷。
+  - 補位（2026-11-06 第二次 review 後加）：
+    - 名額 = 3 − 已連上裝置數，依候選順序取。
+    - 回 `already_connected` 的讓出名額給下一個。
+    - 失敗照樣佔住名額。
+    - 名額內平行送，同時進行的請求數不超過名額。
   - 統計：
     - `already_connected` 不算新連上，也不算失敗。
     - 來源含 mDNS 的失敗算進 m。
@@ -177,6 +185,12 @@ Type: feature
   - 改成在 `connect_wifi_tunnel` 之後才判斷已連上。
   - 帶旗標時改用 `_cleanup_wifi_connection_for`。
   - `already_running` 時不檢查 `dm._connections` 就回 `already_connected`。
+  - 2026-11-06 第二次 review 後加：
+    - `already_connected` 也佔名額（不補位）。
+    - 失敗也補位。
+    - 名額不扣已連上台數。
+    - 改成一個接一個送。
+    - 候選模組照舊截斷候選。
 - 既有測試全部照跑，結果逐一回報，沒跑的要明說：
   - `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"`
   - `tests/pipi/` 的 python 腳本
@@ -196,6 +210,7 @@ Type: feature
   - A 用 USB 連著、同時也在同一個 WiFi 上 → 按 WiFi 掃描 → A 仍然是 USB。
   - A 用 USB 連著、這個網段存過它的 IP → 重新整理頁面 → A 仍然是 USB。（Q12）
   - A 用 WiFi 連上、正在跑路線 → 重新整理頁面 → 路線不中斷。（Q12）
+  - 群組三台（2026-11-06 第二次 review 後加）：A 用 USB 連著、同時也在同一個 WiFi 上；B、C 跟這台電腦配對過，但在這個網段沒存過 IP → 按 WiFi 掃描 → B、C 都連上，A 仍然是 USB。
 - 文件：`README.md` 和 `README.en.md` 的 WiFi Tunnel 段落、疑難排解表，都補上「掃描 WiFi 裝置」，以及「先開啟 LocWarp 才開手機 WiFi 時，按它補連」。
 - Commit：
   - 前綴用半形冒號、後面不空格。
@@ -311,3 +326,67 @@ Type: feature
     - `frontend/src/components/DeviceChipRow.tsx` 還有自己的 `MAX_DEVICES = 3`。保留 `wifiCandidates.ts` 匯出的那個，理由是有測試；`DeviceChipRow` 那份之後改成 import。
   - 跟這張票無關、沒有修：
     - USB 掃描按鈕閃的「找到 n 台裝置」可能少算。`App` 傳的 `onScan={() => { device.scan() }}` 沒有回傳 promise，按鈕在掃描結束前就讀裝置數。驗證時 `/list` 回 2 台，按鈕閃「找到 1 台裝置」。
+- 2026-11-06：第二次 review。另一個 session 對 `aa79d26`、`b4f9b2f` 做 code review（Standards、Spec 兩軸），依結果修改，實作在 `f0395d4`。
+  - 本文改了：
+    - Status 從 resolved 改成 ready-for-human：程式碼做完了，但「使用者用真手機實測」都還沒做。實測完再改回 resolved。
+    - 候選規則的「候選數最多 = 3 − 已連上裝置數」改成補位，驗收的測試和 mutation 清單跟著補。
+    - 後端「通道還在、裝置連線卻掉了」那條，補一行「自動連線和 WiFi 掃描走不到」。
+    - 真手機實測補一條群組三台的情境。
+  - 採納並實作：
+    - 補位（使用者決定）：
+      - review 指出本文兩條互相衝突：「A 用 USB 連著時，B、C 開啟 LocWarp 時照樣自動連上」，和「候選數最多 = 3 − 已連上裝置數」。上一則 Comments 把這件事寫成「票沒規定」，不準確：前一條就是規定。
+      - 衝突的情況：
+        - USB 連著的手機也在同一個 WiFi 上時，它的 mDNS 結果沒有 UDID 可以比對，會佔掉一個名額。另一台手機在這個網段沒存過 IP 時，就可能被擠掉。
+        - B 連上後名額剩 1。如果 mDNS 每次回傳順序都一樣、A 排在 C 前面，C 不管按幾次掃描都連不上。
+        - WiFi 連著的手機會被「通道手機 IP 跳過」擋掉，不受影響。
+      - 做法：候選模組不再截斷；新的純函式 `fillFreeSlots` 開「3 − 已連上台數」個名額平行送，回 `already_connected` 的讓出名額給下一個候選，連上或失敗就佔住。
+        - 失敗不補位：子網掃描到的非 iPhone 主機一台最多耗 45 秒。
+        - 同時進行的請求數不超過名額，後端的裝置上限那層不受影響。
+        - 依後端的實際回應判斷，不比對 IP，所以不會有上一則提到的 DHCP 換 IP 誤判。上一則的「待決定」就此結案，沒有採用比對 IP 的規則。
+        - 代價：USB 手機那次嘗試要先完整握手、再收掉通道，那個名額會晚幾秒才補上。
+      - 新的 seam（`fillFreeSlots`，用假的連線函式測）經使用者同意。TDD：
+        - 「名額上限」「`already_connected` 讓出名額」先紅後綠。
+        - 「失敗佔住名額」「名額內平行、不超過名額」寫下時就是綠的，是防退化的測試，靠 mutation 確認抓得到。
+        - 最後把舊的上限測試改成「候選不截斷」，先紅後綠。
+    - 互斥補上另一個方向：
+      - 原本只有「自動連線進行中時，掃描按鈕不能按」。WebSocket 第一次連上前按鈕可以按；按下去之後 WebSocket 才連上的話，1.5 秒後自動連線會跟掃描同時跑。
+      - 改成 App 記一個「WiFi 掃描進行中」的 ref。自動連線的計時器觸發時如果掃描還在跑，就記成已跑過、已跑完，直接結束。
+      - 掃描不看釘選、跳過規則也一樣，自動連線會試的它都試了。開啟提示要求「還沒按過 WiFi 掃描」，所以這時也不會出現。
+    - 後端 `temp_key` 改名 `tunnel_udid`：
+      - re-key 那段的舊註解說它「通常是 `pending:ip:port`」。照這個說法，USB 連著的手機會比對不到、被切成 WiFi。
+      - 查 `_build_tunnel_udid_candidates`：它是握手成功的那個識別碼，依序試呼叫端帶的 UDID、已連上裝置的 UDID、配對記錄。三者都沒有時才用 `pending:`，所以有裝置連著時一定不是 `pending:`，跳過判斷不會漏。
+      - 註解寫明這件事，並把「通常是」改成「例如」。
+    - `useDevice` 舊的 lockdownd `scanWifi`／`wifiScanning` 補註解：不是 WiFi 掃描，沒有人用，待清理。清理本身照「不做」那條，這張不做。
+    - 上一則「待清理」的 `DeviceChipRow.tsx` `MAX_DEVICES`，改成 import `wifiCandidates.ts` 那份，已清掉。
+    - `filter(is_connected).map(udid)` 兩處抽成 `connectedUdidsOf`。
+  - 只記在票上、不改 code（使用者決定）：
+    - 後端「通道還在、裝置連線卻掉了時，照現在的流程重連」：自動連線和 WiFi 掃描走不到。前端依「通道手機 IP 跳過」，不會對有通道的 IP 送出請求。後端這段只有 `test_wifi_skip_connected.py` 的假物件測試走得到。
+    - 不改的理由：
+      - 改成「只跳過裝置還連著的通道」的話，存過的 Port 跟通道的 Port 不同時，「通道手機 IP 跳過」想避免的 45 秒卡住會回來。要擋住它，得再加「改用通道的 Port」的新邏輯。
+      - 這個狀態不是這張票要處理的，沒有真手機也驗不到。
+    - 遇到時的補救：在 WiFi 面板手動連一次。不帶旗標、Port 一樣時會打到 `already_running`，接著重連。
+  - 沒採納：
+    - `DiscoveredInput` 重抄 `api.ts` 的型別：`npm run build` 會先跑 `tsc`，API 的 `method` 多一種值時這裡會編譯不過，逼人決定那種值算不算 mDNS。改用 `Pick` 引用的話，新的值會被默默歸成 `subnet`。`SavedIpInput` 同理。
+    - `subnet` 跟 `tcp_scan` 名字不同：`subnet` 對應本文和 GLOSSARY 的「子網掃描」；`tcp_scan` 是後端回傳的值，對照寫在 `DiscoveredInput.method` 的註解和唯一那行轉換。
+    - 測試名稱的「偵測結果」：本文的候選規則和驗收也這樣寫，只改測試反而不一致。
+    - README 沒提最多 3 台：兩份 README 開頭和群組那段都已經寫了最多三台。
+  - 測試：
+    - 前端 92/92（0 skipped），`tests/frontend/test_wifi_candidates.ts` 15 個。
+    - `tests/device/test_wifi_skip_connected.py`、`tests/pipi/` 四支 `test_*.py`、`node tests/pipi/test_extension.js`、`npm run build` 都過。`check_live_anonymous.py` 會打真的網站，沒有跑。
+    - Mutation 16 種都讓測試變紅：原本 11 種，加上驗收清單新增的 5 種。
+  - 人工驗證（agent 在瀏覽器驗，`fetch` 全部攔截）：
+    - 環境與防護：
+      - 驗證前後，後端 `/list`、`/wifi/tunnel/status` 都是空的，沒有手機連著。
+      - 這次直接跑 `backend/main.py`、不經 `start.py`，不會開出沒攔截的分頁。
+      - 沿用 5174 port 的驗證用 Vite 與 `fetch` 攔截；攔截腳本另外包了 `WebSocket`，可以讓它在指定時間前連不上。
+      - 後端 access log 裡 `/api/device/*` 只有 GET（keepalive、host-network，以及 agent 自己 curl 的 `/list`、`/status`），沒有任何 POST。
+    - 互斥，修之前先重現。設定：WebSocket 5 秒內連不上、第 3 秒按 WiFi 掃描、偵測要 12 秒。
+      - 修之前：3.0 秒掃描開始偵測；8.0 秒 WebSocket 連上；9.6 秒自動連線又偵測一次；同一個 IP 收到兩筆 `start-and-connect`（15.0 秒、21.6 秒）。
+      - 修之後：只有掃描那一次偵測、一筆 `start-and-connect`（15.0 秒），按鈕閃「新連上 1 台」。
+    - 自動連線照常：沒按掃描、WebSocket 正常時，1.8 秒偵測，4.9 秒送出、帶 `skip_connected`。2.5 秒時按鈕不能按，跑完恢復。
+    - 補位：A 用 USB 連著；mDNS 找到 A、B、C 三個 IP，A 排第一，A 那筆 1.5 秒後回 `already_connected`。
+      - 按下後 A、B 同時送出（3.65 秒），C 在 A 回應後補上（5.16 秒）。
+      - 按鈕閃「新連上 2 台」，裝置列 A（USB）、B、C 都是已連線。
+  - 沒驗到：
+    - 使用者用真手機實測的各條，包括這次補的群組三台。
+    - USB 連著的 iPhone 是否真的會在 WiFi 上回 mDNS：補位的前提來自讀程式碼和 review，瀏覽器裡用的是假結果。

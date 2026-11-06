@@ -330,6 +330,15 @@ Type: feature
         - 只讓 `onScan` 回傳 promise 還不夠。promise 結束時父元件還沒用新清單重新 render，`DeviceStatus` 從 ref 讀到的是上一次掃描的台數，`/list` 依序回 2、3、1、2 台時閃 1、2、3、1。
         - 改成 `onScan` 回傳 `device.scan()` 找到的台數，閃的數字直接用它，拿掉 `devicesRef`。
         - 瀏覽器驗證（`fetch` 全部攔截）：依序閃「找到 2／3／1／2 台裝置」「未偵測到」，都對。這個按鈕沒有自動測試。
+    - 手機 WiFi 都關著時開啟 LocWarp，後端 log 出現「Task exception was never retrieved」和整段 `TimeoutError` traceback。
+      - 自動連線去試兩個存過的 IP，RemotePairing 連不上，請求回 500 `tunnel_timeout`，前端算失敗。這是設計上的失敗路徑，請求本身沒出錯。
+      - traceback 來自 `TunnelRunner.start()`：通道建好前就失敗時，它只把錯誤往上拋，沒收那個已結束 task 的例外，task 被回收時 asyncio 就印出來。
+      - upstream `7fbf467`（v0.2.5）就有。改這張票之前的自動連線，沒有裝置連著時也會去試存過的 IP，一樣會走到這裡。
+      - 2026-11-06 已修，在 `848c19c`：
+        - 往上拋之前先 `self.task.exception()`，行為不變。
+        - 新測試 `tests/device/test_wifi_tunnel_runner.py`（假的 connect，不連網路），修之前紅、修之後綠。
+        - mutation 4 個，3 個會紅。改成 `self.task.cancel()` 那個沒紅：`Task.cancel()` 對已結束的 task 也會清掉 `_log_traceback`，是等價的修法，不是漏測。
+        - 沒有用真的後端重看 log。手機 WiFi 關著時再開一次 LocWarp，後端 log 應該只剩 "Re-scan ... found no untried ports" 和 500，沒有 traceback。
 - 2026-11-06：第二次 review。另一個 session 對 `aa79d26`、`b4f9b2f` 做 code review（Standards、Spec 兩軸），依結果修改，實作在 `f0395d4`。
   - 本文改了：
     - Status 從 resolved 改成 ready-for-human：程式碼做完了，但「使用者用真手機實測」都還沒做。實測完再改回 resolved。

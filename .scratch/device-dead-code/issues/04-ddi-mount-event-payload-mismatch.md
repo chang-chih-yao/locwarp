@@ -15,11 +15,13 @@ Type: task
 triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
 
 - 第 3 節：DDI 已經掛好，也可能被當成掛載失敗。不修的話，新的提示會誤報。
-- 第 4 節：遮罩說明文字寫「約 20MB」，但 classic DDI 只有 7–8 MB。
+- 第 4 節：遮罩說明文字寫「約 20MB」，但 classic DDI 只有 7–8 MB；標題寫「首次設定裝置中」，但遮罩不只第一次連線會出現。
 
 下面的行號都是 `1393369` 時的位置，triage 時逐一對過。開票時（`933d910`）的後端行號，在 03 號票之後都往上移了 6 行。動手前和驗收時都以內容為準，先用 grep 再對一次。
 
 （已解除：03 號票 2026-11-07 resolved。）`Blocked by: 03`：03 號票的驗收要求 `git diff 9cd9b56 --stat -- ':!.scratch'` 只能有 `device_manager.py` 和它新增的測試。這張要是先做，03 號票的範圍檢查就過不了。
+
+順序：`.scratch/wifi-keepalive-restore/issues/01-keepalive-overrides-restore.md`、`02-disconnect-clear-traceback.md` 都標了 `Blocked by` 這張（2026-11-07）。它們會改到 `strings.ts`、`device_manager.py`，先做的話，這張驗收的範圍檢查就過不了。動手前先跑 `git log --oneline 1393369..HEAD -- ':!.scratch'`，要是空的。不是空的就停下來回報，不要自己改範圍檢查。
 
 ## 1. 拿掉走不到的階段進度 UI（`ddiStage`）
 
@@ -47,7 +49,7 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
   - `ddi_mounting` 只留 `setDdiMounting(true)`，拿掉讀 `stage` 的那段（`:566-569`）。
   - 拿掉 `:575`、`:587` 的 `setDdiStage(null)`。
   - 回傳值拿掉 `ddiStage`（`:1179`）。
-- `App.tsx`：整段拿掉 `:2238-2277`，包括 `:2239-2241` 的註解。遮罩本身、標題（`ddi.mounting_title`）和說明文字（`ddi.mounting_hint`）都留著，說明文字的改法見第 4 節。
+- `App.tsx`：整段拿掉 `:2238-2277`，包括 `:2239-2241` 的註解。遮罩本身、標題（`ddi.mounting_title`）和說明文字（`ddi.mounting_hint`）都留著，標題和說明文字的改法見第 4 節。
 - `strings.ts`：拿掉 `:825-834` 這 10 個字串。
 - 以後要分階段顯示進度，`f878de3` 有完整的版本可以拿回來。
 
@@ -64,10 +66,15 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
   - classic 這條路和 `error` 是 v0.2.5 那次 iOS 16 支援（`d512094`）加的。所以 `error` 從寫下來那天起就沒人讀。
 - `git grep -n ddi_mount_failed -- ':!.scratch'` 只有 `device_manager.py:570` 和 `useSimulation.ts:573`，沒有別的消費端。
 - 結果：iOS 16 的 classic DDI 掛載失敗時，遮罩直接消失，使用者看不到任何提示。錯誤要到真的送位置時才會出現。同一件事在 `:566` 有英文 warning log。
+- 開發者模式沒開時也會走到這裡：
+  - README 第 3 步（`README.md:222`）要使用者先用 LocWarp 連上手機，再到「設定」頁按「開啟開發者模式」。所以照 README 設定的 iOS 16 使用者，第一次連線時開發者模式一定還沒開。
+  - `auto_mount_developer` 在本機沒有映像檔時先下載（pymobiledevice3 11.49.5 `mobile_image_mounter.py:600-601`），再呼叫 `mount()`。`mount()` 一開始就檢查開發者模式（`:391` 呼叫 `:64-75` 的 `raise_if_cannot_mount`），沒開就丟 `DeveloperModeIsNotEnabledError`。
+  - `:565` 的 `except Exception` 把它當一般的掛載失敗，送出 `ddi_mount_failed`。
+  - 這是讀程式碼和 README 推的，triage 時沒有 iOS 16 手機實測。
 - 為什麼不能用 `setError` 的錯誤橫幅：
-  - `backend/api/device.py:43` 先建 engine，iOS 16 會在這裡掛 classic DDI、送出 `ddi_mount_failed`。
-  - `:46` 接著送 `device_connected`，前端收到後就 `setError(null)`（`useSimulation.ts:454`）。
-  - `:1643`→`:1648`、`backend/main.py:590`→`:595` 也是同樣順序。用 `setError` 的話，提示會閃一下就被清掉。
+  - iOS 16 用 USB 連線時走 `backend/api/device.py` 的 `connect_device`：`:1643` 先建 engine，iOS 16 會在這裡掛 classic DDI、送出 `ddi_mount_failed`。
+  - `:1648` 接著送 `device_connected`，前端收到後就 `setError(null)`（`useSimulation.ts:454`）。
+  - usbmux 自動重連（`backend/main.py:590`→`:595`）也是同樣順序。用 `setError` 的話，提示會閃一下就被清掉。
 - `App.tsx:193-207` 有現成的 `showToast(msg, ms)`。目前只有使用者自己的操作會跳 toast，連線時不會有別的 toast 蓋掉它。
 
 要改：
@@ -77,14 +84,16 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
   - `useSimulation` 多一個 state：收到 `ddi_mount_failed` 的次數，從 0 開始，並且回傳出去。建議命名為 `ddiMountFailures`。
     - 用次數，不用布林：連續失敗兩次，就要跳兩次 toast。
   - `:572-577` 把 `ddi_mounted` 和 `ddi_mount_failed` 拆開：兩個都關遮罩，`ddi_mount_failed` 另外把次數加 1。
+    - 加 1 要寫成函式型更新 `setDdiMountFailures((n) => n + 1)`。事件處理寫在 `useEffect(..., [subscribe, updateRuntime])` 裡（`useSimulation.ts:684`），裡面讀到的次數是舊的。寫成 `setDdiMountFailures(ddiMountFailures + 1)` 的話會一直是 1，第二次失敗就不會跳 toast。
   - `App.tsx`：緊接在 `showToast` 的 `useCallback`（`:193-207`）後面加一個 effect。次數大於 0 而且有變時，執行 `showToast(t('ddi.mount_failed'), 10000)`。
     - 10 秒跟現有最長的 toast（`:213`）一樣。
     - effect 的依賴只放次數。切換語言時，不能再跳一次 toast。
   - `strings.ts`：在 `ddi.mounting_hint` 後面加 `ddi.mount_failed`：
-    - zh：`Developer Disk Image 掛載失敗,模擬定位可能無法使用。請確認電腦可以連上網路,再重新連線。`
-    - en：`Couldn't mount the Developer Disk Image, so location simulation may not work. Make sure this computer is online, then reconnect.`
+    - zh：`Developer Disk Image 掛載失敗,模擬定位可能無法使用。請確認 iPhone 已開啟開發者模式、電腦可以連上網路,再重新連線。`
+    - en：`Couldn't mount the Developer Disk Image, so location simulation may not work. Make sure Developer Mode is on and this computer is online, then reconnect.`
     - 照 `strings.ts` 現有寫法，中文用半形逗號。
     - 寫「可能」是因為失敗不一定代表定位不能用，例如 120 秒逾時。
+    - 開發者模式和網路都寫，因為這是兩個已知的原因，見現況。照 README 設定的人，下一步本來就是開開發者模式；開了以後手機會重新啟動，「再重新連線」也接得上。
 - `ddi_not_mounted`（iOS 17+ 連線時的預檢）不跳 toast。原則是 triage 時定的：只在 LocWarp 確定失敗時提示，不對連線時的預檢結果提示。理由見 05 號票的 Comments。
 
 ## 3. `AlreadyMountedError` 當成已掛好
@@ -103,10 +112,13 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
 - `AlreadyMountedError` 從 `pymobiledevice3.exceptions` import，放在檔案開頭其他 `pymobiledevice3` 的 import 旁邊，照字母順序會在 `:24` 前面。`device_manager.py` 現在沒有從 `pymobiledevice3.exceptions` import 任何東西。
 - 這要在第 2 節的前端提示之前 commit，這樣不會有任何一個 commit 會誤報。見驗收的 commit 切法。
 
-## 4. 遮罩說明文字拿掉「約 20MB」
+## 4. 遮罩文字：說明拿掉「約 20MB」，標題拿掉「首次」
 
 現況：
 
+- `ddi.mounting_title`（`strings.ts:823`）：中文是「首次設定裝置中」，英文是「Preparing device」。
+  - 遮罩不只第一次連線會出現。照 README 設定的 iOS 16 使用者就會看到兩次：第一次連線時（開發者模式還沒開，見第 2 節），和開了開發者模式、手機重新啟動後再連線時。
+  - classic DDI 在 iPhone 重新開機後要重新掛，所以之後每次重開機都會再出現。這點沒有實機測過。
 - `ddi.mounting_hint`（`strings.ts:824`）：中文是「正在準備 Developer Disk Image(約 20MB),請保持網路連線」，英文是「Preparing the Developer Disk Image (~20MB). Please keep your internet connected.」。
 - 這段是 v0.1.33（`1581890`）為 iOS 17+ 的 personalized DDI 寫的。從 v0.2.58 起，會打開遮罩的只剩 iOS 16 的 classic DDI 掛載（`device_manager.py:556`）。
 - classic DDI 的大小：pymobiledevice3 從 `doronz88/DeveloperDiskImage` 下載（`developer_disk_image/repo.py:14`）。2026-11-07 用 `curl -I` 查 raw.githubusercontent.com 的 `Content-Length`：
@@ -120,6 +132,7 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
   - zh：`正在準備 Developer Disk Image,請保持網路連線`
   - en：`Preparing the Developer Disk Image. Please keep your internet connected.`
 - 拿掉數字，不改成「約 8MB」：不同版本的大小不一樣，而且只有第一次會下載，數字對使用者沒有用。
+- `ddi.mounting_title` 的中文改成 `準備裝置中`，跟英文 `Preparing device` 一致。英文不改。
 
 ## 5. 新增 `tests/device/test_classic_ddi_mount_events.py`
 
@@ -157,8 +170,9 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
 ## 要留
 
 - 四個事件本身，和它們開關遮罩的行為：`ddi_mounting` 打開；`ddi_mounted`、`ddi_mount_failed`、`ddi_not_mounted` 關掉。
-- 遮罩本身、spinner、標題，和說明文字的 key（文字照第 4 節改）。
-- `ddi_not_mounted` 的處理和 `useSimulation.ts:579-585` 的註解，只拿掉 `:587` 的 `setDdiStage(null)`。
+- 遮罩本身、spinner，和標題、說明文字的 key（文字照第 4 節改）。
+- `ddi_not_mounted` 的處理，只拿掉 `:587` 的 `setDdiStage(null)`。
+- `useSimulation.ts:579-585` 的註解：雖然過時了，這張不改，交給 05 號票，見「看過、沒列入」。
 - 後端 log 文字：`:553` 的 info、`:566` 的 warning `Classic DDI auto-mount failed for %s`、`:533` 的 debug。
 - `useSimulation.ts:469-476` 的主裝置過濾。
 - `tunnel_lost`、`device_disconnected` 的提示寫法，和 `:591` 的註解，見「看過、沒列入」。
@@ -170,6 +184,7 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
   - `git grep -n -F 'Classic DDI mount failed' -- backend`。不要跟 `:566` 的 `Classic DDI auto-mount failed for %s` 搞混，那句要留。
   - `git grep -n -w payload -- backend/core/device_manager.py`：`1393369` 時只有 `:571`、`:573`、`:574` 三處，都在第 2 節要拿掉的範圍裡。
   - `git grep -n 20MB -- frontend/src`。`backend` 裡 `_check_personalized_ddi_mounted` docstring 的「the 20MB image upload」講的是 personalized DDI，不在範圍內。
+  - `git grep -n -F '首次設定裝置中' -- frontend/src`。`1393369` 時只有 `strings.ts:823` 一處。
 - 以下要剛好找到指定的處數：
   - `git grep -n -F 'await broadcast(event, {"udid": conn.udid})' -- backend`：1 處。
   - `git grep -n AlreadyMountedError -- backend`：2 處，在 `backend/core/device_manager.py`，一處是 import，一處是 `except`。
@@ -204,16 +219,16 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
   - 對前端送假的 WebSocket 訊息，例如在 app 程式碼載入前先包一層 `window.WebSocket`。
   - 訊息不帶 `udid`，或帶主裝置的 `udid`：hook 會丟掉不是主裝置的事件（`useSimulation.ts:469-476`）。
   - 依序確認：
-    1. 送 `ddi_mounting`：遮罩出現，有標題和第 4 節的新說明文字，沒有進度條、階段名稱和秒數。
+    1. 送 `ddi_mounting`：遮罩出現，有第 4 節的新標題和新說明文字，沒有進度條、階段名稱和秒數。
     2. 接著送 `ddi_mount_failed`：遮罩關掉，跳出第 2 節的中文 toast，大約 10 秒後消失。
     3. 送 `ddi_mount_failed` 後馬上送 `device_connected`：toast 還在。
-    4. 切成英文：不會跳新的 toast。再送一次 `ddi_mount_failed`，跳出英文 toast。
+    4. 切成英文：不會跳新的 toast。再送一次 `ddi_mount_failed`，跳出英文 toast。這一步也驗到次數用的是函式型更新：第二次失敗要再跳一次。
     5. 送 `ddi_mounting` 再送 `ddi_mounted`：遮罩關掉，沒有 toast。
     6. 送 `ddi_not_mounted`：沒有 toast。
   - toast 只顯示 10 秒，截圖不一定來得及，可以用 MutationObserver 記錄畫面變化。每一步的結果記到 Comments。
 - 沒查證，要寫明：iOS 16 實機真的掛載失敗的完整流程。triage 時沒有 iOS 16 手機。
 - 人工核對 grep 驗不到的：
-  - 第 2 節：前端沒有用 `setError`；`App.tsx` 那個 effect 的依賴只有次數；toast 文字跟第 2 節一字不差。
+  - 第 2 節：前端沒有用 `setError`；次數用函式型更新；`App.tsx` 那個 effect 的依賴只有次數；toast 文字跟第 2 節一字不差。
   - 第 3 節：`except AlreadyMountedError:` 在 `except Exception` 前面；`mounted = True` 之後 `finally` 送的是 `ddi_mounted`。
   - 第 1 節：遮罩的標題和說明文字還在。
   - 新測試：從 `get_location_service` 進去；沒有檢查 payload 剛好等於某個 dict；docstring 照現有測試的格式。
@@ -224,8 +239,8 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
     2. 第 2 節後端、第 3 節和新測試：commit 訊息寫到兩件事：
        - `error` 從 v0.2.5（`d512094`）加上起就沒人讀。
        - `AlreadyMountedError` 被當成掛載失敗。先修這個，下一個 commit 加的提示才不會誤報。
-    3. 第 2 節前端：`ddi_mount_failed` 時跳 toast。commit 訊息寫明為什麼不用 `setError`（會被 `device_connected` 清掉），以及只在確定失敗時提示的原則。
-    4. 第 4 節：遮罩說明文字拿掉「約 20MB」。commit 訊息寫上 classic DDI 實際的大小。
+    3. 第 2 節前端：`ddi_mount_failed` 時跳 toast。commit 訊息寫明為什麼不用 `setError`（會被 `device_connected` 清掉）、只在確定失敗時提示的原則，以及 toast 為什麼也寫開發者模式。
+    4. 第 4 節：遮罩標題拿掉「首次」、說明文字拿掉「約 20MB」。commit 訊息寫上 classic DDI 實際的大小，和遮罩不只第一次連線會出現。
   - 結果用 `.scratch:`。
 
 ## 不做
@@ -238,9 +253,11 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
 - 用 `setError` 提示，或讓 `device_connected` 不清錯誤橫幅：理由見第 2 節現況。後者會動到現有斷線橫幅的邏輯。
 - 顯示後端的錯誤文字，或在 toast 裡帶裝置名稱。
 - 依失敗原因給不同的提示，例如 `DeveloperDiskImageNotFoundError`（repo 裡沒有這個 iOS 版本的映像檔）。
+  - 開發者模式沒開（`DeveloperModeIsNotEnabledError`）也不另外接：第 2 節的文字已經寫了開發者模式。另外接就要在事件裡加原因欄位，跟第 2 節只送 `udid` 相反。
+  - 也不改成後端先查開發者模式、沒開就不掛：那樣沒看 README 的人什麼提示都看不到。
 - 改 120 秒的逾時或加重試。
 - 前端單元測試，和為此安裝的測試工具。
-- 05 號票的範圍：README、`ddi_not_mounted` 的提示、`frontend/src/services/api.ts` 的開發者模式提示。
+- 05 號票的範圍：README、`ddi_not_mounted` 的提示、`useSimulation.ts:579-585` 的註解、`frontend/src/services/api.ts` 的開發者模式提示。
 
 ## 看過、沒列入
 
@@ -251,6 +268,12 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
   - `useSimulation.ts:592-594`（`tunnel_lost`）和 `:607-609`（`device_disconnected`）把中英文直接寫在 hook 裡，靠 `localStorage` 判斷語言。
   - `:591` 的註解說 hook 拿不到 i18n context。但 `useSimulation` 是在 `App.tsx:96` 呼叫的，`App` 在 `I18nProvider` 裡面（`frontend/src/main.tsx:10`），其實拿得到。
   - 這張的 toast 由 `App` 用 `t()` 顯示，用不到 hook 裡的 i18n，所以不碰這兩處。
+- `useSimulation.ts:579-585` 的註解，三個說法都過時了：
+  - 說不把 hint 顯示成橫幅：`hint` 在 03 號票已經拿掉。
+  - 說這個警告每次重連都誤報：`b847d3d` 可能已經修好，見 05 號票的 Comments。
+  - 說要關掉進度遮罩：iOS 17+ 根本不會打開遮罩，見上面第一項。
+  - 現在不提示的真正理由，是 triage 定的原則，見「定案」。
+  - 2026-11-07 決定交給 05 號票：註解最後一句「真的沒掛的人，要到瞬移、導航失敗時才會看到錯誤」，就是 05 號票實機要查的事。在這張改寫，等於寫下一句還沒查證的註解。
 
 ## 定案
 
@@ -263,8 +286,15 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
 - 第 4 節：「約 20MB」拿掉數字，併進來。
 - 一張票做完，分四個 commit。
 - 測試：後端新增 `test_classic_ddi_mount_events.py`，兩項檢查；前端不寫單元測試，改用型別檢查和瀏覽器驗證。
-- 順序：這張不等 05、06。06 號票 triage 時如果決定改名，標 `Blocked by: 04`，因為兩張都改 `device_manager.py`。
+- 順序：這張不等 05、06。06 號票 triage 時如果決定改名，標 `Blocked by: 04`，因為兩張都改 `device_manager.py`。（06 號票 2026-11-07 改成 `wontfix`，這條用不到。）
 - 遮罩那個發現記在「看過」，不修。
+
+2026-11-07 看過另一個 session 對六張票的 review 後，使用者決定：
+
+- 第 2 節：toast 文字加上開發者模式。不依原因分提示，後端也不先查開發者模式。次數用函式型更新。
+- 第 4 節：標題「首次設定裝置中」改成「準備裝置中」，併進來。
+- `useSimulation.ts:579-585` 的註解交給 05 號票，這張不改。
+- 順序：這張先做，wifi-keepalive-restore 01、02 號票標 `Blocked by` 這張。
 
 ## Comments
 
@@ -302,3 +332,16 @@ triage 時決定第 2 節讓前端提示使用者，連帶要處理兩件事：
       - 三種情況假的 `auto_mount_developer` 都被呼叫 1 次，`get_location_service` 都回傳 `LegacyLocationService`。
     - `frontend/node_modules/.bin/tsc --noEmit -p frontend` 結束碼 0，涵蓋 `frontend/src` 47 個檔。
     - 驗收裡的 grep，在 `1393369` 上對過現在的處數：`payload` 3 處、`ddi.mounting_hint` 2 處、`ddi_mount_failed` 在 `backend` 1 處、`20MB` 在 `frontend/src` 1 處（`strings.ts:824`）。
+- 2026-11-07：另一個 session 看完 device-dead-code 六張票（HEAD `eebf97e`）後給了建議。逐條對過程式碼，照使用者的決定改了這張票，Status 維持 `ready-for-agent`。
+
+  > *This was generated by AI during triage.*
+
+  - 採納：
+    - 開發者模式沒開也會送 `ddi_mount_failed`，原本的 toast 只叫人檢查網路，方向不對。讀程式碼確認過（`README.md:222`；pymobiledevice3 `mobile_image_mounter.py:600-602`、`:391`、`:74-75`），沒有 iOS 16 實機。改了第 2 節的文字和「不做」。
+    - 跟 wifi-keepalive-restore 的票會互相打壞範圍檢查：keepalive 02 號票會改 `device_manager.py:352` 的 `disconnect`，01 號票會改 `strings.ts:326-330`。定成這張先做，兩張標 `Blocked by` 這張；動手前先確認 `1393369` 之後沒有別的程式碼改動。
+    - 次數要用函式型更新：事件處理在 `useSimulation.ts:684` 的 `useEffect` 裡，讀到的 state 是舊的。寫進第 2 節「要改」和人工核對。
+    - 遮罩標題的「首次」：併進第 4 節。`strings.ts:823` 本來就在範圍檢查允許的 `823-834` 裡，範圍檢查不用改。
+  - 更正：第一回合的 Comments 和第 2 節現況原本寫「`api/device.py:43` 先建 engine，iOS 16 會在這裡掛 classic DDI」。`:43` 在 `/wifi/tunnel` 路由裡，只有 iOS 17+ 會走到；iOS 16 用 USB 連線走 `connect_device`（`:1643`→`:1648`）。第 2 節現況已改，第一回合的 Comments 是當時的紀錄，沒改。「用 `setError` 會被清掉」的結論不變。
+  - 部分採納：`useSimulation.ts:579-585` 的註解確實過時，但交給 05 號票，不併進這張，理由見「看過、沒列入」。
+  - 另開：`DeviceLostError.REASON_DDI_MISSING` 從來沒被丟過，開成 07 號票。它改的檔案跟這張的五個檔沒有重疊。
+  - 行號：`git log 1393369..HEAD -- ':!.scratch'` 是空的，`1393369` 的行號都還對。

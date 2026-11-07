@@ -1,0 +1,76 @@
+# 02 裝置連線：WiFi 通道已經死掉時，`disconnect()` 清定位失敗會印一整段 traceback
+
+Status: needs-triage
+Blocked by: (none)
+Type: task
+相關：`.scratch/wifi-keepalive-restore/issues/01-keepalive-overrides-restore.md`。01 號票的 bug 讓這段 traceback 在使用者以為已經回復定位時也會出現；01 修好後，模擬中斷線一樣會出現。
+
+## 為什麼
+
+模擬還在進行時 WiFi 通道死掉，斷線流程會印出約 50 行的 traceback。看起來像程式當掉，其實斷線流程有跑完（下一行就是 `Disconnected device`）。
+
+2026-11-07 使用者回報（`~/.locwarp/logs/backend.log`，前因見 01 號票）：
+
+| 時間 | 事件 |
+|---|---|
+| 11:42:35,500 | Windows TCP 逾時（`WinError 121`），tunnel 的 socket 死掉 |
+| 11:42:35,595 | keepalive 的 `set()` 收到 `ConnectionTerminatedError`，開始重連 |
+| 11:42:38 – 11:42:59 | watchdog 重啟 tunnel 3 次，每次都 `TimeoutError` |
+| 11:42:59,649 | `could not be restarted; tearing down WiFi connection` |
+| 11:43:00,650 | `DVT channel dropped during clear (TimeoutError)`，接著 `Error clearing location on disconnect` 加上整段 traceback，最後一層是 `DeviceLostError: Device ... no longer connected` |
+| 11:43:00,680 | `Disconnected device` |
+
+只要通道死掉時 `_active` 是 `True` 就會發生。常見情況是導航中、或「停止」後還停在假座標時，手機離開 WiFi 範圍或關掉 WiFi。
+
+## 現況
+
+下面的行號都是 `3ab24bc` 時的位置，開票時逐一對過。動手前以內容為準，先用 grep 再對一次。
+
+- `DeviceManager.disconnect`（`backend/core/device_manager.py:352`）：
+  - 先把 conn 從 `_connections` 拿掉（`:355`），再呼叫 `conn.location_service.clear()`（`:364`）。
+  - 任何例外都用 `logger.exception` 記下來（`:366`），所以會印 traceback。
+  - 接著照常關 DvtProvider、關 RSD，不受影響。
+- `DvtLocationService.clear`（`backend/services/location_service.py:210`）：
+  - `_active` 是 `False` 時直接返回（`:212`）。
+  - 否則先開頻道再清。通道死掉時，開頻道會在 1 秒後逾時（log 裡 11:42:59,649 到 11:43:00,650）。
+  - 逾時被當成頻道掉了，走 `_reconnect()` → `dvt_factory` → `get_fresh_dvt_provider`（`device_manager.py:766`）。
+  - conn 在 `:355` 已經拿掉了，所以 `get_fresh_dvt_provider` 立刻丟 `DeviceLostError(reason=REASON_USB_GONE)`。
+  - **在 `disconnect()` 裡，`clear()` 的重連一定失敗**，因為 conn 一定已經先拿掉了。
+- 通道還活著時（例如使用者自己按斷線），`clear()` 第一次就會成功。這條路要留著，手機才會回到真實定位。
+- `LegacyLocationService.clear`（`:296`）結構一樣。
+- 呼叫 `disconnect()` 的地方（不含測試）：
+  - `backend/api/device.py:575`：`_cleanup_wifi_connection_for`，WiFi watchdog 拆連線走這裡（`:906`）。
+  - `backend/api/device.py:1371`、`:1707`
+  - `backend/api/location.py:84`、`:214`
+  - `backend/core/device_manager.py:122`、`:720`、`:891`、`:905`
+- 測試：`tests/` 下沒有測試涵蓋 `disconnect()` 清定位失敗的情況。
+
+## 可能的做法
+
+- A. `disconnect()` 裡把 `DeviceLostError` 分開接，只記一行 warning（udid 和 reason），不印 traceback。其他例外照舊用 `logger.exception`。
+  - 改動最小。`DeviceLostError` 在這裡是預期中的結果：裝置已經不在了。
+- B. A 加上：WiFi watchdog 拆連線時已經知道通道死了，就跳過 `clear()`，省掉 1 秒的逾時。
+  - 要在 `disconnect()` 加參數，經過 `_cleanup_wifi_connection_for` 傳進去。省 1 秒，好處不大。
+
+建議 A。
+
+## 待查
+
+- 模擬中通道死掉、沒清到定位時，iPhone 會停在假座標，還是自己回到真實定位？
+  - 這會決定 warning 要不要提醒使用者（例如「手機可能還停在假座標」）。
+  - 要實機查：WiFi 連線，傳送後關掉手機 WiFi，用 Apple 地圖看手機在哪。
+  - 2026-11-07 那次手機其實停在假座標（01 號票），但當時沒看手機最後在哪。
+
+## 待 triage 決定
+
+- 選 A 還是 B。
+- warning 的內容：看「待查」的結果決定要不要提醒使用者。
+- 驗收要求（草稿）：
+  - `clear()` 丟 `DeviceLostError` 時：沒有 ERROR 等級、帶 `exc_info` 的紀錄，有一行 warning。後面關 DvtProvider、關 RSD 照常跑。把 `DeviceLostError` 併回一般例外要會紅。
+  - `clear()` 丟其他例外時照舊印 traceback。
+- 定案後補「要改」、「驗收」、「不做」，再改成 `ready-for-agent`。
+
+## Comments
+
+- 2026-11-07：使用者回報「用 WiFi 連線、改完定位、回復定位後關手機 WiFi，terminal 出現 exception」。traceback 是這張票，`_active` 為什麼還是 `True` 是 01 號票。
+  - 開票時對過：`device_manager.py:352-380`、`:590-610`、`:766-800`，`location_service.py:107-232`，`api/device.py:531-575`、`:896-906`，以及 grep 到的所有 `disconnect(` 呼叫端。

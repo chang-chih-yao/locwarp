@@ -1,10 +1,12 @@
 """DeviceManager.get_location_service on an iOS 17+ phone whose DVT provider
 fails to open, e.g. because the Developer Disk Image is not mounted: it must
 fall back to LegacyLocationService instead of raising, and the DDI status
-check before it must still broadcast ddi_not_mounted with the phone's udid,
-because the frontend closes its progress overlay on that event. Both must
-hold through the cleanup in
-.scratch/device-dead-code/issues/03-dvt-location-service-leftovers.md.
+check before it must still broadcast ddi_not_mounted with the phone's udid.
+Both had to hold through the cleanup in
+.scratch/device-dead-code/issues/03-dvt-location-service-leftovers.md. The
+frontend no longer listens for ddi_not_mounted (its progress overlay went
+with iOS 16 support); whether to keep the event is left to
+.scratch/device-dead-code/issues/05-readme-ddi-not-mounted-prompt.md.
 
 Run from the repo root: .venv/Scripts/python.exe tests/device/test_dvt_location_fallback.py
 DvtProvider, MobileImageMounterService, broadcast and the lockdown are fakes:

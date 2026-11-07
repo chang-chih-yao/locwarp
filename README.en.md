@@ -59,10 +59,9 @@ Each step is covered in detail under [Installation and setup](#installation-and-
 | Item | Requirement |
 | --- | --- |
 | PC | Windows 10 / 11 (64-bit) |
-| Device | iPhone / iPad. **iOS / iPadOS 17 and later** is the primary supported range |
-| iOS 16.x | Community maintained (@bitifyChen, [#9](https://github.com/keezxc1223/locwarp/pull/9)), using the LegacyLocationService path |
-| iOS 15 and earlier | Not supported |
-| Connection | USB cable, or the same Wi-Fi subnet (Wi-Fi Tunnel is iOS 17+ only) |
+| Device | iPhone / iPad, **iOS / iPadOS 17 and later** |
+| iOS 16 and earlier | Not supported. For iOS 16, use upstream [keezxc1223/locwarp](https://github.com/keezxc1223/locwarp), where iOS 16 is community maintained (@bitifyChen, [#9](https://github.com/keezxc1223/locwarp/pull/9)) |
+| Connection | USB cable, or the same Wi-Fi subnet |
 
 ### Versions reported working
 
@@ -72,9 +71,8 @@ Each step is covered in detail under [Installation and setup](#installation-and-
 | **iOS 26.x** | 26.5 · 26.4.2 · 26.4.1 · 26.4.1 iPadOS · 26.4 · 26.3.1 · 26.2 · 26.2.1 iPadOS (M1 iPad) |
 | **iOS 18.x** | 18.7.8 · 18.7.7 · 18.7.1 · 18.6.2 · 18.5 iPadOS · 18.3.1 · 18.1.1 |
 | **iOS 17.x** | 17.6.1 |
-| **iOS 16.x** (community) | 16.7.15 · 16.7.12 |
 
-"Reported working" means **at least one user ran it successfully in their own environment**. It is not a general compatibility guarantee. Stability depends on the iOS patch version, pymobiledevice3 support for that version, whether the Developer Disk Image is mounted, and the drivers, VPN, firewall, and antivirus setup on the Windows side. An iOS 16+ version missing from the table simply has no report yet. Reports are welcome in [Issues](https://github.com/keezxc1223/locwarp/issues).
+"Reported working" means **at least one user ran it successfully in their own environment**. It is not a general compatibility guarantee. Stability depends on the iOS patch version, pymobiledevice3 support for that version, whether the Developer Disk Image is mounted, and the drivers, VPN, firewall, and antivirus setup on the Windows side. An iOS 17+ version missing from the table simply has no report yet. Reports are welcome in [Issues](https://github.com/keezxc1223/locwarp/issues).
 
 ---
 
@@ -220,7 +218,7 @@ Before first use, connect the iPhone with a USB cable. The phone asks "Trust Thi
 
 On the iPhone: **Settings → Privacy & Security → Developer Mode → On**. The device asks to restart, then asks you to confirm once more.
 
-On iOS 16 and later this option is hidden by default. Once LocWarp is connected, open the **Settings** tab at the top and press "**Enable Developer Mode**". After pressing it:
+This option is hidden by default. Once LocWarp is connected, open the **Settings** tab at the top and press "**Enable Developer Mode**". After pressing it:
 
 1. Fully close the Settings app on the iPhone.
 2. Reopen Settings → Privacy & Security and scroll down to find Developer Mode.

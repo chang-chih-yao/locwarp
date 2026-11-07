@@ -18,10 +18,10 @@ pytcp_datas, pytcp_binaries, pytcp_hidden = collect_all('pmd_pytcp')
 
 # developer_disk_image is an indirect dependency of pymobiledevice3 (imported
 # at the top of services/mobile_image_mounter.py). PyInstaller doesn't pick
-# it up via collect_all('pymobiledevice3'), so previously the bundled exe
-# would fail to import mobile_image_mounter and silently skip DDI mount.
-# That broke iOS <17 users (e.g. iPhone 8 Plus / iOS 16.7) — DtSimulateLocation
-# accepts the call but iOS rejects it without DDI.
+# it up via collect_all('pymobiledevice3'), so without this the bundled exe
+# fails to import mobile_image_mounter, and the iOS 17+ Personalized DDI
+# check (DeviceManager._check_personalized_ddi_mounted) has to skip its
+# mobile_image_mounter query.
 ddi_datas, ddi_binaries, ddi_hidden = collect_all('developer_disk_image')
 
 # pyimg4 is an indirect dep of mobile_image_mounter's Personalized DDI path.

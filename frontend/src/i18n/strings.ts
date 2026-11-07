@@ -256,7 +256,7 @@ export const STRINGS = {
   'device.wifi_scan_open_hint': { zh: '沒有自動連上 iPhone，開好手機 WiFi 後按「掃描 WiFi 裝置」', en: "No iPhone connected automatically. Turn on the iPhone's Wi-Fi, then press 'Scan Wi-Fi devices'." },
   'wifi.section_title': { zh: 'WiFi 無線連線', en: 'Wi-Fi Connection' },
   'wifi.section_hint': { zh: '(用 USB 連線不需要點這裡)', en: '(skip this if connected via USB)' },
-  'device.ios_unsupported_label': { zh: 'iOS {version} 不支援(需 iOS 16+)', en: 'iOS {version} not supported (requires iOS 16+)' },
+  'device.ios_unsupported_label': { zh: 'iOS {version} 不支援(需 iOS 17+)', en: 'iOS {version} not supported (requires iOS 17+)' },
   'wifi.warning_label': { zh: '注意事項', en: 'Notice' },
   'wifi.warning_title': { zh: '慎用:USB 拔除模式相容性說明', en: 'Caution: USB-free mode compatibility' },
   'wifi.warning_body': {
@@ -353,9 +353,6 @@ export const STRINGS = {
   'wifi.tunnel_use_this': { zh: '使用此台', en: 'Use this' },
   'wifi.tunnel_usb_can_disconnect': { zh: 'USB 可拔除', en: 'USB can be disconnected' },
   'wifi.tunnel_admin_hint': { zh: '請使用身分管理員開啟 LocWarp,必須先通過 USB 信任。', en: 'Run LocWarp as Administrator. Device must be paired via USB first.' },
-  'wifi.legacy_connect': { zh: 'Connect', en: 'Connect' },
-  'wifi.legacy_connecting': { zh: '連線中...', en: 'Connecting...' },
-  'wifi.legacy_hint': { zh: 'iPhone 解鎖並已配對即可直接連線。', en: 'iPhone unlocked and paired, connect directly.' },
   'wifi.device_not_detected': { zh: '未偵測到裝置,請確認 iPhone 與電腦在同一 WiFi', en: 'Device not detected, ensure iPhone and computer are on the same Wi-Fi' },
   'wifi.detect_failed': { zh: '偵測失敗', en: 'Detection failed' },
   'wifi.autoconnect_label': { zh: '開啟 LocWarp 時自動連線', en: 'Auto-connect on launch' },
@@ -818,20 +815,6 @@ export const STRINGS = {
   'pause.min': { zh: '最小', en: 'Min' },
   'pause.max': { zh: '最大', en: 'Max' },
   'pause.seconds': { zh: '秒', en: 's' },
-
-  // ── DDI mount overlay ───────────────────────
-  'ddi.mounting_title': { zh: '首次設定裝置中', en: 'Preparing device' },
-  'ddi.mounting_hint': { zh: '正在準備 Developer Disk Image(約 20MB),請保持網路連線', en: 'Preparing the Developer Disk Image (~20MB). Please keep your internet connected.' },
-  'ddi.stage_starting': { zh: '準備中...', en: 'Preparing...' },
-  'ddi.stage_downloading': { zh: '下載 DDI (從 GitHub)', en: 'Downloading DDI (from GitHub)' },
-  'ddi.stage_verifying': { zh: '驗證裝置狀態', en: 'Verifying device state' },
-  'ddi.stage_signing': { zh: '向 Apple 申請個人化簽章', en: 'Requesting personalization signature from Apple' },
-  'ddi.stage_uploading': { zh: '上傳 DDI 到 iPhone', en: 'Uploading DDI to iPhone' },
-  'ddi.stage_mounting': { zh: '掛載到裝置中', en: 'Mounting on device' },
-  'ddi.eta_starting': { zh: '剛剛開始', en: 'Just started' },
-  'ddi.eta_continuing': { zh: '正常時間內', en: 'On schedule' },
-  'ddi.eta_slow': { zh: '比平常久,網路可能較慢', en: 'Slower than usual — network may be slow' },
-  'ddi.eta_very_slow': { zh: '很久了,可能即將 timeout', en: 'Taking very long — may time out soon' },
 } as const;
 
 export type StringKey = keyof typeof STRINGS;

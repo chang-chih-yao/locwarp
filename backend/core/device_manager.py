@@ -42,11 +42,11 @@ from services.location_service import (
 
 class UnsupportedIosVersionError(RuntimeError):
     """Raised when a connecting device's iOS version is below the minimum
-    supported by LocWarp (currently 16.0). Surfaces a structured error to
+    supported by LocWarp (currently 17.0). Surfaces a structured error to
     the API layer so the frontend can show an actionable message rather
     than a stack trace."""
 
-    MIN_VERSION = "16.0"
+    MIN_VERSION = "17.0"
 
     def __init__(self, version: str) -> None:
         self.version = version
@@ -94,7 +94,7 @@ def _remember_device_name(udid: str, name: str) -> None:
 class _ActiveConnection:
     """Internal bookkeeping for a single connected device."""
     udid: str
-    lockdown: object  # LockdownClient or RemoteServiceDiscoveryService
+    lockdown: object  # RemoteServiceDiscoveryService over the USB or WiFi tunnel
     ios_version: str
     connection_type: str = "USB"  # "USB" or "Network"
     name: str = "iPhone"  # Cached DeviceName so discover_devices can surface
@@ -232,12 +232,12 @@ class DeviceManager:
 
     async def connect(self, udid: str) -> None:
         """
-        Establish a connection appropriate for the device's iOS version.
+        Establish a connection to the device.
 
         Supports both USB and WiFi (Network) connections via usbmuxd.
 
-        * **iOS 17+** -- TCP tunnel via CoreDeviceTunnelProxy + RSD.
-        * **iOS 16.x** -- plain lockdown over usbmux + legacy location service.
+        Only iOS 17+ is supported: TCP tunnel via CoreDeviceTunnelProxy + RSD.
+        Older devices raise ``UnsupportedIosVersionError``.
         """
         async with self._lock:
             if udid in self._connections:
@@ -271,17 +271,14 @@ class DeviceManager:
         _remember_device_name(udid, device_name)
         ver = _parse_ios_version(ios_version_str)
 
-        if ver < (16, 0):
+        if ver < _parse_ios_version(UnsupportedIosVersionError.MIN_VERSION):
             logger.warning(
                 "Refusing connect: %s reports iOS %s, below minimum %s",
                 udid, ios_version_str, UnsupportedIosVersionError.MIN_VERSION,
             )
             raise UnsupportedIosVersionError(ios_version_str)
 
-        if ver >= (17, 0):
-            conn = await self._connect_tunnel(udid, lockdown, ios_version_str)
-        else:
-            conn = self._connect_legacy(udid, lockdown, ios_version_str)
+        conn = await self._connect_tunnel(udid, lockdown, ios_version_str)
         conn.connection_type = connection_type
         conn.name = device_name
 
@@ -330,20 +327,6 @@ class DeviceManager:
                 f"無法建立裝置通道 (iOS {ios_version})。"
                 f"請以系統管理員身份執行 LocWarp。"
             )
-
-    # -- iOS 16.x via usbmux lockdown --------------------------------------
-
-    def _connect_legacy(
-        self, udid: str, lockdown, ios_version: str
-    ) -> _ActiveConnection:
-        """Direct usbmux lockdown connection for iOS 16.x devices."""
-        logger.info("Using legacy lockdown connection for %s (iOS %s)", udid, ios_version)
-        return _ActiveConnection(
-            udid=udid,
-            lockdown=lockdown,
-            ios_version=ios_version,
-            usbmux_lockdown=lockdown,
-        )
 
     # ------------------------------------------------------------------
     # Disconnection
@@ -403,10 +386,9 @@ class DeviceManager:
         """
         Return a ``LocationService`` instance for the given device.
 
-        The concrete type depends on the iOS version:
-
-        * iOS 17+  ->  ``DvtLocationService`` (uses DVT instrumentation)
-        * iOS < 17 ->  ``LegacyLocationService`` (uses DtSimulateLocation)
+        Normally ``DvtLocationService`` (DVT instrumentation); see
+        ``_create_dvt_location_service`` for the ``LegacyLocationService``
+        fallback.
 
         The service is cached on the connection so subsequent calls are cheap.
         """
@@ -421,11 +403,7 @@ class DeviceManager:
         if conn.location_service is not None:
             return conn.location_service
 
-        ver = _parse_ios_version(conn.ios_version)
-        if ver >= (17, 0):
-            loc = await self._create_dvt_location_service(conn)
-        else:
-            loc = await self._create_legacy_location_service(conn)
+        loc = await self._create_dvt_location_service(conn)
         conn.location_service = loc
         return loc
 
@@ -511,70 +489,6 @@ class DeviceManager:
         except Exception:
             pass
 
-    async def _ensure_classic_ddi_mounted(self, conn: _ActiveConnection) -> None:
-        """Best-effort Developer Disk Image mount for iOS 16.x devices."""
-        try:
-            import pymobiledevice3.services.mobile_image_mounter as mim
-        except ImportError as exc:
-            logger.warning(
-                "mobile_image_mounter not importable for classic DDI (%s: %s); "
-                "skipping classic DDI mount",
-                type(exc).__name__, exc,
-            )
-            return
-
-        mounter_cls = getattr(mim, "MobileImageMounterService", None)
-        if mounter_cls is not None:
-            try:
-                mounter = mounter_cls(lockdown=conn.lockdown)
-                try:
-                    await mounter.connect()
-                    if await mounter.is_image_mounted("Developer"):
-                        logger.debug("Classic DDI already mounted on %s", conn.udid)
-                        return
-                finally:
-                    try:
-                        await mounter.close()
-                    except Exception:
-                        pass
-            except Exception:
-                logger.warning("Could not query classic DDI mount state", exc_info=True)
-
-        mount_fn = None
-        for name in ("auto_mount_developer", "auto_mount", "auto_mount_disk_image"):
-            candidate = getattr(mim, name, None)
-            if callable(candidate):
-                mount_fn = candidate
-                break
-        if mount_fn is None:
-            logger.warning("No classic DDI auto-mount helper found; continuing without mount")
-            return
-
-        logger.info("Classic DDI not mounted on %s; attempting auto-mount", conn.udid)
-        try:
-            from api.websocket import broadcast
-            await broadcast("ddi_mounting", {"udid": conn.udid})
-        except Exception:
-            pass
-
-        mounted = False
-        try:
-            await asyncio.wait_for(mount_fn(conn.lockdown), timeout=120.0)
-            mounted = True
-            logger.info("Classic DDI mounted successfully for %s", conn.udid)
-        except Exception:
-            logger.warning("Classic DDI auto-mount failed for %s", conn.udid, exc_info=True)
-        finally:
-            try:
-                from api.websocket import broadcast
-                event = "ddi_mounted" if mounted else "ddi_mount_failed"
-                payload = {"udid": conn.udid}
-                if not mounted:
-                    payload["error"] = "Classic DDI mount failed"
-                await broadcast(event, payload)
-            except Exception:
-                pass
-
     async def _create_dvt_location_service(
         self, conn: _ActiveConnection
     ) -> LocationService:
@@ -624,20 +538,6 @@ class DeviceManager:
             legacy = LegacyLocationService(legacy_lockdown)
             logger.info("Using LegacyLocationService fallback for %s", conn.udid)
             return legacy
-
-    async def _create_legacy_location_service(
-        self, conn: _ActiveConnection
-    ) -> LegacyLocationService:
-        """Build the legacy location service for iOS 16.x devices."""
-        try:
-            await self._ensure_classic_ddi_mounted(conn)
-        except Exception:
-            logger.warning("Classic DDI auto-mount failed; legacy location may still fail", exc_info=True)
-        logger.info("Using LegacyLocationService for %s", conn.udid)
-        return LegacyLocationService(conn.lockdown)
-
-    # connect_wifi (legacy direct-IP WiFi) removed in v0.1.49. iOS 16 goes
-    # through usbmux (_connect_legacy); the WiFi tunnel below is iOS 17+ only.
 
     # ------------------------------------------------------------------
     # WiFi connection (iOS 17+ tunnel only)

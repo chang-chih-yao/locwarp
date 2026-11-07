@@ -53,9 +53,9 @@ class LocationService(ABC):
     """
     Abstract base for location simulation services.
 
-    Subclasses implement version-specific simulation using either the DVT
-    instrumentation channel (iOS 17+) or the legacy DtSimulateLocation
-    service (iOS < 17).
+    Subclasses implement simulation using either the DVT instrumentation
+    channel or the DtSimulateLocation developer service (the fallback when
+    DVT fails).
     """
 
     @abstractmethod
@@ -233,7 +233,7 @@ class DvtLocationService(LocationService):
 
 class LegacyLocationService(LocationService):
     """
-    Location simulation for iOS < 17 devices via DtSimulateLocation.
+    Location simulation via DtSimulateLocation, the fallback when DVT fails.
 
     Parameters
     ----------

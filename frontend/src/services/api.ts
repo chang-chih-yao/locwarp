@@ -63,8 +63,8 @@ const ERROR_I18N: Record<string, { zh: string; en: string }> = {
   pipi_zoom_too_low: { zh: '請放大地圖後再載入蘑菇地圖', en: 'Zoom in to load the mushroom map' },
   pipi_bad_bounds: { zh: '地圖範圍不正確', en: 'Invalid map bounds' },
   ios_unsupported: {
-    zh: '裝置 iOS 版本過舊,LocWarp 僅支援 iOS 16 以上。請升級 iOS 後再試。',
-    en: 'This device runs an unsupported iOS version. LocWarp requires iOS 16 or later. Please update and try again.',
+    zh: '裝置 iOS 版本過舊,LocWarp 僅支援 iOS 17 以上。請升級 iOS 後再試。',
+    en: 'This device runs an unsupported iOS version. LocWarp requires iOS 17 or later. Please update and try again.',
   },
 }
 

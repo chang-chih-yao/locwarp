@@ -17,9 +17,6 @@ async def list_devices():
     return await dm.discover_devices()
 
 
-# /wifi/connect (legacy direct-IP WiFi for iOS <17) removed in v0.1.49.
-
-
 class WifiTunnelConnectRequest(BaseModel):
     rsd_address: str
     rsd_port: int
@@ -64,7 +61,7 @@ async def wifi_tunnel_connect(req: WifiTunnelConnectRequest):
             detail={
                 "code": "ios_unsupported",
                 "message": (
-                    f"偵測到 iOS {e.version},LocWarp 自 v0.1.49 起僅支援 "
+                    f"偵測到 iOS {e.version},LocWarp 僅支援 "
                     f"iOS {UnsupportedIosVersionError.MIN_VERSION} 以上。"
                     f"請將裝置升級至 iOS {UnsupportedIosVersionError.MIN_VERSION} 或更新版本後再連線。"
                 ),
@@ -1600,9 +1597,9 @@ async def amfi_reveal_developer_mode(udid: str):
 
     # AMFI is a legacy lockdown service (com.apple.amfi.lockdown) that's only
     # advertised on the classic USB lockdown, NOT on iOS 17+'s RSD tunnel.
-    # For iOS 17+ devices we stash the original USB lockdown on
-    # conn.usbmux_lockdown; use it here. For iOS 16 devices conn.lockdown
-    # IS the USB lockdown, so fall back to it.
+    # We stash the original USB lockdown on conn.usbmux_lockdown; use it
+    # here. WiFi tunnel connections have none and fall back to the RSD,
+    # which lacks AMFI, so they fail below with amfi_reveal_failed.
     amfi_lockdown = getattr(conn, "usbmux_lockdown", None) or conn.lockdown
     if amfi_lockdown is None:
         raise HTTPException(
@@ -1660,7 +1657,7 @@ async def connect_device(udid: str):
             detail={
                 "code": "ios_unsupported",
                 "message": (
-                    f"偵測到 iOS {e.version},LocWarp 自 v0.1.49 起僅支援 "
+                    f"偵測到 iOS {e.version},LocWarp 僅支援 "
                     f"iOS {UnsupportedIosVersionError.MIN_VERSION} 以上。"
                     f"請將裝置升級至 iOS {UnsupportedIosVersionError.MIN_VERSION} 或更新版本後再連線。"
                 ),

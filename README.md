@@ -59,10 +59,9 @@
 | 項目 | 需求 |
 | --- | --- |
 | 電腦 | Windows 10 / 11(64 位元) |
-| 裝置 | iPhone / iPad,**iOS / iPadOS 17 以上**為主要支援版本 |
-| iOS 16.x | 由社群維護(@bitifyChen,[#9](https://github.com/keezxc1223/locwarp/pull/9)),走 LegacyLocationService 路徑 |
-| iOS 15 以下 | 不支援 |
-| 連線 | USB 線,或同一個 WiFi 網段(WiFi Tunnel 僅 iOS 17+) |
+| 裝置 | iPhone / iPad,**iOS / iPadOS 17 以上** |
+| iOS 16 以下 | 不支援。iOS 16 請改用上游 [keezxc1223/locwarp](https://github.com/keezxc1223/locwarp),那邊的 iOS 16 由社群維護(@bitifyChen,[#9](https://github.com/keezxc1223/locwarp/pull/9)) |
+| 連線 | USB 線,或同一個 WiFi 網段 |
 
 ### 已回報可用的版本
 
@@ -72,9 +71,8 @@
 | **iOS 26.x** | 26.5 · 26.4.2 · 26.4.1 · 26.4.1 iPadOS · 26.4 · 26.3.1 · 26.2 · 26.2.1 iPadOS (M1 iPad) |
 | **iOS 18.x** | 18.7.8 · 18.7.7 · 18.7.1 · 18.6.2 · 18.5 iPadOS · 18.3.1 · 18.1.1 |
 | **iOS 17.x** | 17.6.1 |
-| **iOS 16.x**(社群維護) | 16.7.15 · 16.7.12 |
 
-「回報可用」代表**至少一位使用者在其環境下成功運作**,不等同於通用相容性保證。虛擬定位的穩定性取決於 iOS 修補版本、pymobiledevice3 對該版本的支援、Developer Disk Image 是否已掛載,以及 Windows 端的驅動、VPN、防火牆與防毒設定。沒列在表上的 iOS 16+ 版本只是還沒有人回報,歡迎到 [Issues](https://github.com/keezxc1223/locwarp/issues) 補充。
+「回報可用」代表**至少一位使用者在其環境下成功運作**,不等同於通用相容性保證。虛擬定位的穩定性取決於 iOS 修補版本、pymobiledevice3 對該版本的支援、Developer Disk Image 是否已掛載,以及 Windows 端的驅動、VPN、防火牆與防毒設定。沒列在表上的 iOS 17+ 版本只是還沒有人回報,歡迎到 [Issues](https://github.com/keezxc1223/locwarp/issues) 補充。
 
 ---
 
@@ -220,7 +218,7 @@ Windows 需要 Apple 的 USB driver 才能跟 iPhone 溝通。下列**擇一**�
 
 iPhone 上:**設定 → 隱私權與安全性 → 開發者模式 → 開啟**,裝置會要求重新啟動,重啟後再確認一次。
 
-iOS 16 以上預設不顯示這個選項。LocWarp 連上裝置後,到上方的「**設定**」頁按「**開啟開發者模式**」按鈕,按下後:
+iPhone 預設不顯示這個選項。LocWarp 連上裝置後,到上方的「**設定**」頁按「**開啟開發者模式**」按鈕,按下後:
 
 1. 在 iPhone 上完全關掉「設定」App。
 2. 重新打開「設定 → 隱私權與安全性」,往下拉就會看到「開發者模式」。

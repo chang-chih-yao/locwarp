@@ -257,12 +257,6 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
   // Random-walk pause countdown (unix epoch seconds of when pause ends)
   const [pauseEndAt, setPauseEndAt] = useState<number | null>(null)
   const [pauseRemaining, setPauseRemaining] = useState<number | null>(null)
-  const [ddiMounting, setDdiMounting] = useState(false)
-  // Stage within the DDI mount pipeline. null when not mounting, else
-  // one of the backend's stage names (starting / downloading / verifying
-  // / signing / uploading / mounting). `elapsed` is seconds since the
-  // mount started, used for a rough ETA estimate in the overlay.
-  const [ddiStage, setDdiStage] = useState<{ stage: string; elapsed: number } | null>(null)
   const [waypointProgress, setWaypointProgress] = useState<{ current: number; next: number; total: number } | null>(null)
   // Loop lap tracker. `current` = laps completed so far; `total` = the
   // configured lap limit if the user asked for auto-stop, or null for an
@@ -559,32 +553,6 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
             total: typeof d.total === 'number' && d.total > 0 ? d.total : null,
           })
         }
-        break
-      }
-      case 'ddi_mounting': {
-        setDdiMounting(true)
-        const d = wsMessage.data
-        if (d && typeof d.stage === 'string') {
-          setDdiStage({ stage: d.stage, elapsed: typeof d.elapsed === 'number' ? d.elapsed : 0 })
-        }
-        break
-      }
-      case 'ddi_mounted':
-      case 'ddi_mount_failed': {
-        setDdiMounting(false)
-        setDdiStage(null)
-        break
-      }
-      case 'ddi_not_mounted': {
-        // Backend reports the DDI isn't mounted. Silently dismiss the
-        // mount-progress overlay; we no longer surface the hint as a
-        // banner because most users on iOS 17+ have DDI auto-mounted by
-        // a prior tool and the warning fires spuriously after every
-        // reconnect. Users who genuinely lack DDI will see the failure
-        // when an action (teleport / navigate) actually returns an
-        // error from the device.
-        setDdiMounting(false)
-        setDdiStage(null)
         break
       }
       case 'tunnel_lost': {
@@ -1175,8 +1143,6 @@ export function useSimulation(subscribe?: WsSubscribe, primaryUdid?: string | nu
     pauseRandomWalk,
     setPauseRandomWalk,
     pauseRemaining,
-    ddiMounting,
-    ddiStage,
     waypointProgress,
     lapProgress,
     loopLapCount,

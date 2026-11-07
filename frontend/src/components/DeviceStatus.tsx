@@ -219,7 +219,6 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
     if (scanResultTimer.current) clearTimeout(scanResultTimer.current);
     if (wifiScanFlashTimer.current) clearTimeout(wifiScanFlashTimer.current);
   }, []);
-  // WiFi tunnel remains iOS 17+ only; iOS 16 devices are supported over USB.
 
   // Multi-result detect: keep the full list and let the user pick one when
   // mDNS / subnet scan returns 2+ iPhones. Single result auto-fills as before.
@@ -595,11 +594,10 @@ const DeviceStatus: React.FC<DeviceStatusProps> = ({
               }}
             >
               {devices.map((d) => {
-                // iOS 16 is supported again. Keep only truly older devices
-                // disabled so users don't waste a click waiting for the
-                // backend to reject the connect.
+                // Disable devices below iOS 17 so users don't waste a click
+                // waiting for the backend to reject the connect.
                 const major = parseInt((d.iosVersion || '0').split('.')[0], 10) || 0;
-                const unsupported = major > 0 && major < 16;
+                const unsupported = major > 0 && major < 17;
                 return (
                 <div
                   key={d.id}

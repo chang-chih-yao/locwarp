@@ -158,3 +158,4 @@ Type: task
   **不建 `.out-of-scope/`：** 理由跟 2026-11-07 那則一樣，這是程式碼品質的判斷，不是被否決的功能需求。
 
   **看過、沒列入：** `LegacyLocationService` 的「Legacy」指的是 `DtSimulateLocation` 這個舊服務。它以前只給 iOS 16 用，現在是 iOS 17+ 的退路，看名字容易以為它該跟 iOS 16 一起刪。這是另一個名字，這張不談。
+- 2026-11-08：上一則「看過、沒列入」的 `LegacyLocationService` 名字，照使用者的決定開成 08 號票（`.scratch/device-dead-code/issues/08-legacy-location-service-name.md`），`needs-triage`。

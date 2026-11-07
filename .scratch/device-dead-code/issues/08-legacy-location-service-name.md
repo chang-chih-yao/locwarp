@@ -1,6 +1,6 @@
 # 08 裝置連線：`LegacyLocationService` 的「Legacy」容易被當成 iOS 16 的程式
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: (none)
 Type: task
 相關：`.scratch/device-dead-code/issues/06-create-dvt-location-service-name.md` 2026-11-08 triage 的 Comment。那次討論 DVT、`DtSimulateLocation` 各是哪個 iOS 版本的路，記在「看過、沒列入」，同一天照使用者的決定開成這張。
@@ -151,3 +151,14 @@ triage 時在工作目錄試改過一次，下面每一項都照預期，之後�
   - 代價：上游升級 pymobiledevice3 時會改這行，合併時這行會衝突。只有一行，解法寫在「驗收」的 commit 訊息要求裡。
 
   **不建 `.out-of-scope/`：** 名字是程式碼品質的判斷，不是被否決的功能需求，理由寫在這張票就夠了（跟 06 號票一樣）。
+- 2026-11-08：實作完成，`Status` 改成 `resolved`。
+  - Commit：`28ffa5e` `README:技術棧表格把 LegacyLocationService 改成 pymobiledevice3 的 DtSimulateLocation`。commit 訊息寫了「驗收」要求的兩件事。
+  - 驗收（基準 `fff4d54`）：
+    - `git grep -n LegacyLocationService -- README.md README.en.md`：找不到，結束碼 1。
+    - `git grep -n -F 'lockdown / DtSimulateLocation)' -- README.md README.en.md`：2 處，`README.md:300`、`README.en.md:300`。
+    - `git diff fff4d54 --numstat -- ':!.scratch'`：只有兩個 README，都是 `1	1`。
+    - word-diff：剛好兩組 `-LegacyLocationService`、`+DtSimulateLocation`。
+  - 沒跑測試：只改 README，沒有改程式。`git grep -n -i readme -- tests` 只找到 `test_dvt_location_fallback.py:9` 裡 05 號票的路徑，沒有測試會讀 README。也沒有 TDD 和型別檢查可做。
+  - code review（`mattpocock-skills:code-review`，commit 前，基準 `29c39f9` 對工作目錄）：Standards、Spec 都沒有發現。
+    - Standards 提到中英文改同一行像 Duplicated Code，但兩語 README 本來就各自維護，這張也指定一起改，不算。
+    - 換行字元：`git ls-files --eol` 兩檔都是 `i/lf w/lf`。git 印的「LF will be replaced by CRLF」來自本機 `core.autocrlf=true`，跟這次改動無關。

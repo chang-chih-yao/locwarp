@@ -10,6 +10,11 @@
 - 註解只放在不直覺或有副作用的邏輯；docstring 詳細度隨複雜度，複雜的寫參數與回傳型別。`__init__`（類別 docstring 已說明時）與
   名稱已說明行為的測試函式免寫
 
+## 合併上游
+
+- 合併上游（`upstream` remote）時丟掉 iOS 16 的程式：這個 fork 從 `c20a1b6` 起只支援 iOS 17+，上游還留著 `_connect_legacy`、
+  `_ensure_classic_ddi_mounted`、`ddi_mounting` 進度遮罩和 `MIN_VERSION = "16.0"`。`LegacyLocationService` 是 iOS 17+ DVT 失敗時的退路，要留著
+
 ## Agent skills
 
 ### Issue tracker

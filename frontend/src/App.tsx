@@ -634,7 +634,7 @@ const App: React.FC = () => {
     void pushRecent(lat, lng, source === 'coord' ? 'coord_navigate' : 'navigate')
   }, [sim, device, t, showToast, pushRecent])
 
-  // 撈水果 (GLOSSARY.md) from a 蘑菇地圖 flower's popup: teleport 30 m east,
+  // 撈水果 (GLOSSARY.md) from a 蘑菇地圖 flower's popup: teleport 35 m east,
   // then walk straight onto the flower. Recent places get the flower only,
   // and only once some device has started walking.
   const handleCollectFruit = useCallback(async (latIn: number, lngIn: number) => {

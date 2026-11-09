@@ -163,12 +163,13 @@ own full-width row under the teleport / navigate pair.
 
 **The flow** (`runFruitApproach`):
 
-- **Start: 30 m due east, fixed.** No setting and no randomness, so every
+- **Start: 35 m due east, fixed.** No setting and no randomness, so every
   run is the same. The ticket gives no reason for east over any other
-  direction; only being fixed matters. 30 m keeps the walk short and is also
-  the 花農專用模式's default radius. The offset is the same 111,320 m-per-degree formula as
-  `backend/core/flower.py` `_circle_points`, about 29.97 m by haversine.
-  Not yet checked on a phone: whether 30 m is enough for the game.
+  direction; only being fixed matters. It started at 30 m (a short walk,
+  and the 花農專用模式's default radius); on 2026-11-09 the user moved it to
+  35 m, with no reason recorded. The offset is the same 111,320 m-per-degree formula as
+  `backend/core/flower.py` `_circle_points`, about 34.96 m by haversine.
+  Not yet checked on a phone: whether 35 m is enough for the game.
 - **Teleport, wait for it, then navigate to the flower.** Speed follows the
   current move mode, custom speed and speed range, like 導航到這裡. There is
   no extra wait for the game between the two (add one only if phone tests

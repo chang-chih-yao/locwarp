@@ -21,18 +21,18 @@ function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: numb
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/** Asserts `p` is 30 m ± 0.1 m due east of `from`. */
-function assertDueEast30m(from: { lat: number; lng: number }, p: { lat: number; lng: number }) {
+/** Asserts `p` is 35 m ± 0.1 m due east of `from`. */
+function assertDueEast35m(from: { lat: number; lng: number }, p: { lat: number; lng: number }) {
   assert.equal(p.lat, from.lat, '緯度不變');
   assert.ok(p.lng > from.lng, `經度往東：${p.lng} > ${from.lng}`);
   const d = haversineM(from, p);
-  assert.ok(Math.abs(d - 30) <= 0.1, `距離 ${d} m`);
+  assert.ok(Math.abs(d - 35) <= 0.1, `距離 ${d} m`);
 }
 
-test('撈水果的起點在花的正東方 30 m（台北緯度 25 與緯度 60 兩處）', () => {
-  // Latitude 60 halves cos(lat): forgetting the cos(lat) term lands 15 m away.
+test('撈水果的起點在花的正東方 35 m（台北緯度 25 與緯度 60 兩處）', () => {
+  // Latitude 60 halves cos(lat): forgetting the cos(lat) term lands 17.5 m away.
   for (const flower of [{ lat: 25.04, lng: 121.56 }, { lat: 60, lng: 24.94 }]) {
-    assertDueEast30m(flower, fruitStartPoint(flower.lat, flower.lng));
+    assertDueEast35m(flower, fruitStartPoint(flower.lat, flower.lng));
   }
 });
 
@@ -76,7 +76,7 @@ test('全部瞬移成功：先瞬移到起點，等瞬移完成才導航到花�
   const run = runFruitApproach(FLOWER, f.deps);
   await settle();
   assert.equal(f.teleported.length, 1);
-  assertDueEast30m(FLOWER, f.teleported[0]);
+  assertDueEast35m(FLOWER, f.teleported[0]);
   assert.deepEqual(f.navigated, [], '瞬移還沒完成就導航');
 
   f.finishTeleport();

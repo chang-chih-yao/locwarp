@@ -5,13 +5,13 @@
 // No runtime imports and erasable-syntax-only so `node --test` can load it
 // directly.
 
-// Fixed by design, not a setting: due east, 30 m.
-const START_OFFSET_M = 30;
+// Fixed by design, not a setting: due east, 35 m.
+const START_OFFSET_M = 35;
 // Same equirectangular offset as backend/core/flower.py `_circle_points`.
 const M_PER_DEG = 111_320;
 
 /**
- * Where 撈水果 starts: 30 m due east of the flower.
+ * Where 撈水果 starts: 35 m due east of the flower.
  *
  * @param lat the flower's latitude.
  * @param lng the flower's longitude.

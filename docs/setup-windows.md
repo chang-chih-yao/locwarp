@@ -38,12 +38,12 @@
 ```powershell
 [Environment]::OSVersion.Version.Build
 [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-Test-Path start.py, LocWarp-dev.bat, backend\requirements.lock.txt, frontend\package-lock.json
+Test-Path start.py, LocWarp-dev.bat, LocWarp-dev.ps1, backend\requirements.lock.txt, frontend\package-lock.json
 ```
 
-通過條件：Build ≥ 22000、架構是 `X64`、四個 `True`。
+通過條件：Build ≥ 22000、架構是 `X64`、五個 `True`。
 
-沒通過：沒有安裝可做，**停下來**回報。ARM64 電腦裝到的 Python wheel 和 Node 執行檔都跟原開發機不同，這份文件不適用。四個檔案缺任何一個，代表不在專案根目錄，或者拿到的專案不完整。
+沒通過：沒有安裝可做，**停下來**回報。ARM64 電腦裝到的 Python wheel 和 Node 執行檔都跟原開發機不同，這份文件不適用。五個檔案缺任何一個，代表不在專案根目錄，或者拿到的專案不完整。
 
 ## 步驟 1：uv
 
@@ -271,6 +271,8 @@ backend 監聽 `0.0.0.0`，第一次啟動時 Windows 防火牆可能會跳出�
 ## 啟動方式（給人）
 
 1. 雙擊專案根目錄的 `LocWarp-dev.bat`，跳出 UAC 視窗時按「是」。iOS 17 以上的裝置要用系統管理員權限才能建立通道。
+   LocWarp 會在 Windows Terminal 裡用 PowerShell 7 執行，分頁標題是「LocWarp (dev)」。沒裝 PowerShell 7 時改用 Windows 內建的
+   PowerShell 5.1。沒有 Windows Terminal 時會開成傳統主控台視窗，標題可能顯示 `cmd.exe`，但功能都一樣。
 2. 程式會自動開啟瀏覽器到 `http://localhost:5173`。要停止時，在 LocWarp 的視窗按 Enter。
 3. 專案根目錄的 `LocWarp.bat` 是原作者的啟動檔，裡面寫死了作者電腦上的 Python 路徑。請用 `LocWarp-dev.bat` 啟動。
 4. iPhone 端的設定（信任電腦、開發者模式、DDI）請照 README「安裝與前置設定」第 2 到 5 步。

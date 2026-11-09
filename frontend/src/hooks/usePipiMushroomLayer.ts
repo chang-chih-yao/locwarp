@@ -486,8 +486,9 @@ export function usePipiMushroomLayer({
       if (drawn.has(it.id)) return;
       const kind = kindOf(it);
       // Both decided when the marker is built (rebuild or reselect); prune
-      // never re-checks them. A mark lasts until the flower wilts, which is
-      // also when prune drops it, so a ✓ never outlives its mark.
+      // never re-checks them. Prune drops a flower at the item's wiltingMs,
+      // normally also its mark's expiry; a list giving an earlier one would
+      // leave the ✓ up until the next rebuild.
       const ribbon = ribbonEndMs(it, now) !== null;
       // Only `taken` gets the ✓, never `unknown`: while the list is on its way
       // the flower is drawn bare, and the list's answer rebuilds the layer.

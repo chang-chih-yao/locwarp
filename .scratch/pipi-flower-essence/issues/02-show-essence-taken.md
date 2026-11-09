@@ -62,8 +62,8 @@ Spec: `.scratch/pipi-flower-essence/spec.md`
       - 「花」關掉時三個都停用、變灰（`#5d6378`），第三個保留勾選。重新整理頁面後設定還在；「花」打開後恢復可按。存的是 `{"ribbonOnly":false,"showCommon":true,"showEssenceTaken":true}`。
     - 筆數（狀態列都等於 marker 數）：
       - 勾著：花 428 朵，✓ 6 個，位置剛好是 6 朵標過的花（1 朵真的 + 5 朵假的），狀態列 572。
-      - 不勾：花 422 朵（428 − 6），✓ 0 個，那朵萬壽菊沒畫，狀態列 565。
-      - 再勾回來：花 428 朵、✓ 6 個，狀態列 571（中間有 1 朵蘑菇到期）。
+      - 不勾：花 422 朵（428 − 6），✓ 0 個，那朵萬壽菊沒畫，狀態列 565。比 572 少 7：花少 6 朵，另外這之間有 1 朵蘑菇到期（136 → 135）。
+      - 再勾回來：花 428 朵、✓ 6 個，狀態列 571（565 + 6）。
     - 三種標記大小下 6 個 ✓ 都看得到，在圖示右上角壓著花圈外緣，沒有被圓切掉。
     - 延遲清單 5 秒：
       - 勾著、關掉再打開圖層：花、蘑菇、煙霧 0.1 秒一起出現，✓ 0 個，萬壽菊畫出來但沒有 ✓；5.2 秒清單回來，6 個 ✓ 一起出現。
@@ -83,5 +83,16 @@ Spec: `.scratch/pipi-flower-essence/spec.md`
       - `shouldShow` 和 `addMarker` 各算一次 `essenceTaken`：spec 指定在建立 marker 時判斷。要共用的話，`selectPipiMarkers` 得把判斷結果往外傳、介面變大，換來的只是省一次 Map 查找。
       - `.pipi-pin-box` 和 `.pipi-pin-inner` 都宣告寬高：內層的圓保留自己的尺寸，不依賴外層。
     - 改完重跑 typecheck、前端 122/122、`npm run build`，瀏覽器確認改名後 6 個 ✓ 照常出現。
-  - 要使用者決定、這次沒改：
-    - cookie-sync 擴充功能在 LocWarp 存的 cookie 已經失效時，可能不會自己補推。照 `background.js` 的 `doSync`：每分鐘的檢查在狀態是「已同步」、LocWarp 回 `configured: true` 時直接跳過。它只看 LocWarp 有沒有 cookie，不看那份還能不能用。Chrome 本來就登入著的話，重新登入也不會改到 cookie。這次沒確認擴充功能當時的實際狀態，只確認了點圖示之前一直沒推。跟這張票無關。
+  - 另開票：cookie-sync 擴充功能在 LocWarp 存的 cookie 失效時可能不會自己補推，跟這張票無關，記在 `.scratch/pipi-cookie-sync-dead-cookie/issues/01-dead-cookie-not-repushed.md`（needs-triage）。
+- 2026-11-10：另一個 session 對 `dea841e`、`8b3ec08` 再做一輪 code review。Standards 沒有硬違規，7 條判斷題；Spec 沒有缺漏、沒有實作錯誤。處理跟這段紀錄在同一個 commit。
+  - 採納：
+    - `addMarker` 的註解和設計文件寫「✓ 不會比標記活得久」，其實靠「清單給的失效時間等於 items 的枯萎時間」這個前提，沒有東西鎖住。改成寫出前提，並寫明不成立時 ✓ 會留到下一次整層重建。
+    - 設計文件只寫行為：刪掉「✓ 跟圓並列，因為 `overflow: hidden`」那一項和元件表裡同樣的結構說明，理由只留在 styles.css。「✓ 跟著標記大小縮放」併進上一段。上一輪記的「理由留在 styles.css 和設計文件」因此只剩 styles.css。
+    - 設計文件的 "icon's top-right corner" 改成 marker：GLOSSARY 的「標記大小」說圖示只是圓裡的圖片。
+    - 本票紀錄：蘑菇到期寫到了下一步，改到 572 → 565 那一步；cookie-sync 那段移到另開的票。
+  - 沒採納：
+    - 重複呼叫 `essenceTaken`、內外兩層都宣告寬高：理由同上一輪。
+    - 快取鍵和 html 模板各自拼同一組值：兩者在同一個函式裡相鄰。改成一個函式同時產生是既有結構的重構，不在這張票的範圍。
+    - 「只有 taken 才有 ✓」沒有測試：spec 明定這張票不加測試。
+    - `addMarker` 不檢查點位種類（Spec 可商榷）：蘑菇要被誤標，得它的 id 加盛開時間剛好在清單裡，清單只有花的標記。
+  - 待清理、這次沒改：GLOSSARY「標記大小」的定義寫「每個點位圖示的大小」，_Avoid_ 又說圖示只是圓裡的圖片，兩句互相矛盾。

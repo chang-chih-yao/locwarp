@@ -17,7 +17,7 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 | Protocol client | `backend/services/pipi_mushroom.py` | API session, AES/HMAC envelope, throttle, cache, Set-Cookie renewal, item normalisation, `essence_marks` (the 標記清單, normalised, never cached) |
 | API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items`, `GET /api/pipi/essence` (`{marks: [{id, bloomedMs, wiltingMs}]}`) |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
-| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties on the icon's `.pipi-pin-box`, which holds the circle and the 拿過精華 ✓ side by side |
+| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties on the icon's `.pipi-pin-box` |
 | Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). `shouldReadEssence` / `recordEssenceRead`: whether this fetch loop still has to read the 標記清單. The layer only acts on its decisions |
 | Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 |
@@ -174,17 +174,14 @@ keeps its two fields, and the third takes its initial value.
   is on its way; mushrooms and smoke draw meanwhile. The layer gets each
   item's answer from `essenceTaken` at server time.
 - Ticked, nothing is hidden for 拿過精華, and flowers draw even while the list
-  is 還沒讀到. A flower that is 拿過精華 gets a green ✓ on its icon's
-  top-right corner, so it stands apart from flowers not yet taken. The icon
-  is not dimmed. A flower that is 還不知道 gets no ✓; the list's answer
-  rebuilds the layer and adds it.
+  is 還沒讀到. A flower that is 拿過精華 gets a green ✓ on its marker's
+  top-right corner, sized with 標記大小, so it stands apart from flowers not
+  yet taken. The marker is not dimmed. A flower that is 還不知道 gets no ✓;
+  the list's answer rebuilds the layer and adds it.
   - Decided when the marker is built (rebuild or reselect) and part of the
-    icon cache key. Prune doesn't re-check it: a mark lasts until the flower
-    wilts, which is when prune drops the marker anyway.
-  - The ✓ is a sibling of the circle (`.pipi-pin-inner`), not inside it,
-    because the circle's `overflow: hidden` would clip a corner badge. Its
-    lengths are fractions of `--pipi-box` and `--pipi-ring`, so it scales
-    with 標記大小.
+    icon cache key. Prune doesn't re-check it: it drops the flower at its
+    wilting time, normally also the mark's expiry. A list giving an earlier
+    expiry would leave the ✓ up until the next rebuild.
   - Toggling the checkbox only rebuilds the markers; it sends no items or
     標記清單 request.
 - The 標記狀態 goes back to 還沒讀到 when the layer is turned off or the

@@ -152,3 +152,4 @@ Type: feature
       - Data Clumps：`lat, lng` 分開傳是整個 codebase 的慣例。
       - `App.tsx` 的 Divergent Change：toast helper 就是為了這個流程抽出來的。
   - 跟這張票無關、沒有修：`start.py` 的輸出接到 pipe 時，cp950 印不出 `✓` 會當掉，要設 `PYTHONUTF8=1`。
+- 2026-11-09：使用者決定把 Q3 的起點從正東 30 m 改成正東 35 m，沒有說理由；方向、固定不設定、直線走都不變。距離測試改成 35 m ± 0.1 m（用每度 111,320 m 算出約 34.96 m）。上面寫 30 m 的地方是當時的決定，沒有改。

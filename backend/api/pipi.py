@@ -123,3 +123,13 @@ async def items(
         return await _client().items(north, south, east, west, zoom)
     except PipiError as e:
         raise _http_error(e) from e
+
+
+@router.get("/essence")
+async def essence():
+    """The account's 拿過精華 marks (GLOSSARY.md). LocWarp stores none of
+    them; the site is the only source."""
+    try:
+        return {"marks": await _client().essence_marks()}
+    except PipiError as e:
+        raise _http_error(e) from e

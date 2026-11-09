@@ -37,9 +37,14 @@ function contains(outer: PipiBox, inner: PipiBox): boolean {
     && inner.east <= outer.east && inner.west >= outer.west;
 }
 
-/** Creates a planner that keeps the last successful fetch to itself. */
+/**
+ * Creates a planner that keeps the last successful fetch to itself. The hook
+ * makes one per fetch loop (layer opened, cookie re-set, 重新整理), and that is
+ * what ties the 標記清單 (拿過精華, GLOSSARY.md) read to those three moments.
+ */
 export function createPipiFetchPlanner() {
   let last: PipiFetchRecord | null = null;
+  let essenceRead = false;
   return {
     /**
      * Decides what a settled view needs.
@@ -77,6 +82,24 @@ export function createPipiFetchPlanner() {
      */
     record(fetch: PipiFetchRecord): void {
       last = { ...fetch };
+    },
+
+    /**
+     * Whether to read the 標記清單 now: at most once per loop, at its first
+     * decision that isn't `hide` (nothing is drawn below the min zoom, and
+     * the list isn't cached, so every read reaches the site).
+     *
+     * @param decision what {@link plan} just returned; `reuse` counts too,
+     *   since a read held back by a 429 is retried after the back-off whatever
+     *   items need.
+     */
+    shouldReadEssence(decision: PipiFetchDecision): boolean {
+      return decision !== 'hide' && !essenceRead;
+    },
+
+    /** Marks the 標記清單 as read for this loop; {@link shouldReadEssence} says no from now on. */
+    recordEssenceRead(): void {
+      essenceRead = true;
     },
   };
 }

@@ -8,21 +8,22 @@ Google login on that site, so LocWarp proxies it with the user's browser
 cookie. A Chrome extension keeps that cookie in sync.
 
 Contracts for editing these files: `.claude/rules/pipi-mushroom.md`.
-Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/test_pipi_fruit.ts`, `tests/frontend/test_pipi_fetch_planner.ts`, `tests/frontend/test_pipi_marker_selection.ts`.
+Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/test_pipi_essence.ts`, `tests/frontend/test_pipi_fruit.ts`, `tests/frontend/test_pipi_fetch_planner.ts`, `tests/frontend/test_pipi_marker_selection.ts`.
 
 ## Pieces
 
 | Part | File | Role |
 | --- | --- | --- |
-| Protocol client | `backend/services/pipi_mushroom.py` | API session, AES/HMAC envelope, throttle, cache, Set-Cookie renewal, item normalisation |
-| API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items` |
+| Protocol client | `backend/services/pipi_mushroom.py` | API session, AES/HMAC envelope, throttle, cache, Set-Cookie renewal, item normalisation, `essence_marks` (the 標記清單, normalised, never cached) |
+| API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items`, `GET /api/pipi/essence` (`{marks: [{id, bloomedMs, wiltingMs}]}`) |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
 | Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties |
-| Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). The layer only acts on its decision |
+| Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). `shouldReadEssence` / `recordEssenceRead`: whether this fetch loop still has to read the 標記清單. The layer only acts on its decisions |
 | Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 |
+| 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `essenceTaken`, `ESSENCE_NOT_LOADED`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, and whether a point is 拿過精華 at a server time. The layer passes the answer to `passesFlowerFilter` |
 | 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `App.tsx` `handleCollectFruit` supplies the single-device or group calls |
-| Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status |
+| Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花; disabled while 花 is off), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status, and a 精華標記讀取失敗 line while the last 標記清單 read failed |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
 | Extension | `extensions/pipi-cookie-sync/` | pushes the browser's Cookie header to `127.0.0.1:8777` (user guide: its `README.md`) |
 
@@ -43,9 +44,12 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
    returns the full data from zoom 15 (see "Items by zoom" below). The site's
    own page draws everything only from zoom 16 (`mfMapDetailZoom`). `regionCode` is
    TW / HK / MA (Malaysia), using the same boxes as the site (`region_for`).
-5. `Handlers/MapData.ashx {mode: "allcategories"}` is public. The live smoke
+5. `Handlers/FlowerEssenceData.ashx` holds the account's 拿過精華 marks
+   (GLOSSARY.md). `{action: "list"}` returns them all, any region (see
+   "The 標記清單" below). Same envelope, needs login.
+6. `Handlers/MapData.ashx {mode: "allcategories"}` is public. The live smoke
    test uses it to prove the envelope still works.
-6. Anti-debugging: `api-security.min.js` runs a `debugger` loop, so DevTools
+7. Anti-debugging: `api-security.min.js` runs a `debugger` loop, so DevTools
    stalls on the map page (Ctrl+F8 disables breakpoints). The page is
    `X-Frame-Options: DENY`, so it can't be embedded. The site sends
    `Retry-After` and `X-Pikmin-Rate-Limit-*` headers.
@@ -65,6 +69,28 @@ The site goes by the request's `zoom`, not the size of the box. When the site
 changes, send one bbox at zoom 14 and at zoom 15 and compare them to recheck
 the threshold. `/api/pipi/items` now refuses zoom 14 itself, so call
 `PipiMushroomClient.request` directly with a logged-in cookie for that.
+
+The 標記清單 (measured 2026-11-09 through the local backend, with one mark
+the user had just made on the site; details in
+`.scratch/pipi-flower-essence/issues/01-hide-essence-taken.md`):
+
+- The answer is `{ok, items: [...]}`, with no `nowMs`. Each row has
+  `mapObjectId` (a string such as `9c19ee876ae44a5f9a92b68d602cc1ea.16`),
+  `bloomedTimeMs` and `wiltingTimeMs` (integer ms, 23 h apart), and
+  `collected: true`. The site's script never reads `collected` from the list,
+  and LocWarp doesn't either.
+- Cross-check: the marked flower (a 黃色萬壽菊 at 24.790423, 120.988557)
+  came back from zoom-15 `items` with `id` and `bloomedMs` equal to the row's
+  `mapObjectId` and `bloomedTimeMs`, and the same wilting time. So both sides
+  give one identity, the site's own rule (`mfmap.min.js`, 2026-11-09):
+  trimmed `String(id)`, `|`, floored bloom ms; none without an id or a bloom
+  time > 0 (`essenceMarkId`). LocWarp also counts a string bloom time as
+  unset, like the flower rules.
+- In that `items` sample (62 items, 49 flowers) every `id` was a string and
+  every flower time an integer.
+- The backend normalises each row to `{id: str, bloomedMs: int, wiltingMs: int}`
+  and drops a row without an identity. An unset or invalid wilting time
+  becomes 0, which never counts as 拿過精華.
 
 Cookies the site sets are all `HttpOnly; Secure; SameSite=Lax`:
 `pm_site_session`, `PikminVisitor`, `ASP.NET_SessionId` (a session cookie),
@@ -130,17 +156,30 @@ The popup re-runs `ribbonEndMs` when it opens and, for a 彩帶花, adds a
 countdown line. `fmtRibbonCountdown` always writes it as `m:ss`, never with
 hours, so a popup opened at the exact bloom ms reads `60:00`.
 
-**花的子篩選** (`passesFlowerFilter`): two panel checkboxes, saved as
+**花的子篩選** (`passesFlowerFilter`): three sub-filters saved together as
 `locwarp.pipi_flower_filter`; initial values and `resolvePipiFlowerFilter`
-are in `frontend/src/defaults.ts`.
+are in `frontend/src/defaults.ts`. A value saved before the third existed
+keeps its two fields, and the third takes its initial value.
 
 - 只顯示彩帶 (initially off) keeps only 彩帶花. Unticking 顯示普花
-  (initially on) drops 普花 and their 花苞. A flower must pass both.
+  (initially on) drops 普花 and their 花苞. A flower must pass all three
+  sub-filters, so a 拿過精華 彩帶花 stays hidden under 只顯示彩帶.
+- 顯示拿過精華的花 (`showEssenceTaken`, initially off; the panel has no
+  checkbox for it yet, so it stays off). While it is unticked,
+  flowers that are 拿過精華 are hidden. So is every flower while the 標記清單
+  is 還沒讀到, so 拿過精華 flowers don't flash up and vanish while the list
+  is on its way; mushrooms and smoke draw meanwhile. The layer gets each
+  item's answer from `essenceTaken` at server time.
+- The 標記狀態 goes back to 還沒讀到 when the layer is turned off or the
+  cookie is cleared. A new fetch loop (cookie re-set, 重新整理) keeps the old
+  marks until its own list replaces them. A failed read (429 included)
+  empties them instead, so every flower shows, and the panel says
+  精華標記讀取失敗 until a read succeeds or the next loop starts.
 - Mushrooms and smoke always pass. The 花 kind chip stays the master switch
   and is applied outside this module.
 - The site's 強制顯示彩帶花 (on by default) overrides each 花種's own
   checkbox. LocWarp deliberately does not copy it, and no combination of the
-  two checkboxes reproduces it.
+  sub-filters reproduces it.
 - The site fetches `items` with no filter and filters in the browser, so the
   sub-filters need no change to upstream requests.
 
@@ -236,9 +275,32 @@ and uses none of its radius, lap or wait settings.
       more than 750.
   - Stops on `pipi_no_cookie`, `pipi_login_required` and `pipi_cookie_invalid`.
   - Backs off by `retry_after` on 429.
+  - The 標記清單 (`GET /api/pipi/essence`) is read at most once per fetch
+    loop: opening the layer, a cookie re-set (`updated_at` changes) and
+    重新整理 each start one; the site's Set-Cookie renewals don't. It goes
+    out with the loop's first decision that isn't `hide`, next to the items
+    request, so nothing is read below zoom 15. The 60 s refresh, pans and
+    zooms never read it.
+    - Only a loop that knows the cookie is set (`configured` true) reads it.
+      The loop that runs before the status answer is replaced once it says
+      true, so a startup with the layer already on reads the list once, not twice.
+    - A stopped loop sends nothing and leaves the list for the next loop.
+      `STOP_CODES` on the list itself stop the loop the same way, since it
+      often goes out next to the items request that stops it. That is not a
+      failed read: the marks stay, so 拿過精華 flowers don't reappear on the
+      data still drawn.
+    - A 429 on it does not count as read. It sets the loop's back-off from
+      `retry_after`, nothing is sent during the back-off, and the first
+      decision after it that isn't `hide` reads again, even one that reuses
+      items. The backend's back-off outlives the loop, so without this a
+      重新整理 during it would leave the whole loop unread. Any other failure
+      counts as read, and the next loop retries.
 - **Backend:**
   - One upstream call at a time, at least 1 s apart.
   - 30 s cache per viewport. A hit adds the entry's age to `now_ms`, so it still reads as the server time at response.
+  - The 標記清單 is never cached and goes through the same queue, spacing and
+    `Retry-After` as items. The back-off is client-wide, so a list request
+    during it is answered 429 without reaching the site.
   - `Retry-After` honoured (5–900 s).
   - No `items` call below zoom 15 or outside TW/HK/MA. The frontend's
     `PIPI_MIN_ZOOM` is a separate copy of 15 and requests nothing below it either.

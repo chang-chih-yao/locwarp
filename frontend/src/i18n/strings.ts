@@ -402,6 +402,7 @@ export const STRINGS = {
   'map.pipi_status_no_cookie': { zh: '尚未設定 Cookie, 請在下方貼上', en: 'Cookie not set, paste it below' },
   'map.pipi_truncated': { zh: '這個範圍資料太多, 只顯示部分, 放大可看完整資料', en: 'Too many results here, zoom in for the full set' },
   'map.pipi_capped': { zh: '這個畫面的點位超過 {count} 個, 只畫出靠近中心的部分, 放大或少開幾種點位可看完整資料', en: 'More than {count} points in view, showing those nearest the center; zoom in or turn off some kinds for the full set' },
+  'map.pipi_essence_load_failed': { zh: '精華標記讀取失敗', en: "Couldn't load essence marks" },
   'map.pipi_refresh': { zh: '重新整理', en: 'Refresh' },
   'map.pipi_cookie_label': { zh: '網站 Cookie', en: 'Site cookie' },
   'map.pipi_cookie_set': { zh: '已設定', en: 'Set' },

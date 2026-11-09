@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canCollectFruit, fmtRibbonCountdown, isCommonFlower, passesFlowerFilter, ribbonEndMs } from '../../frontend/src/pipiFlowers.ts';
 import type { PipiFlowerFilter } from '../../frontend/src/defaults.ts';
+import type { PipiEssenceTaken } from '../../frontend/src/pipiEssence.ts';
 import type { PipiItem } from '../../frontend/src/services/api.ts';
 
 const MIN = 60_000;
@@ -160,29 +161,69 @@ const MIXED: Record<string, PipiItem> = {
   煙霧: { ...base(), itemKind: 'smoke', displayName: '煙霧', smokeEndMs: NOW + HOUR },
 };
 
-const shown = (filter: PipiFlowerFilter) =>
-  Object.keys(MIXED).filter((name) => passesFlowerFilter(MIXED[name], filter, NOW));
+// Every item gets the same 拿過精華 answer here; the caller works it out per
+// item with pipiEssence.ts, which has its own tests.
+const shown = (filter: PipiFlowerFilter, essence: PipiEssenceTaken) =>
+  Object.keys(MIXED).filter((name) => passesFlowerFilter(MIXED[name], filter, NOW, essence));
 
-test('四種勾法各自顯示的花，蘑菇與煙霧每一種都顯示', () => {
-  assert.deepEqual(shown({ ribbonOnly: false, showCommon: true }), [
-    '普花', '非普花', '彩帶普花', '彩帶非普花', '普花花苞', '非普花花苞', '蘑菇', '煙霧',
-  ]);
-  assert.deepEqual(shown({ ribbonOnly: true, showCommon: true }), ['彩帶普花', '彩帶非普花', '蘑菇', '煙霧']);
-  assert.deepEqual(shown({ ribbonOnly: true, showCommon: false }), ['彩帶非普花', '蘑菇', '煙霧']);
-  assert.deepEqual(shown({ ribbonOnly: false, showCommon: false }), ['非普花', '彩帶非普花', '非普花花苞', '蘑菇', '煙霧']);
+const ALL = ['普花', '非普花', '彩帶普花', '彩帶非普花', '普花花苞', '非普花花苞', '蘑菇', '煙霧'];
+const RIBBON = ['彩帶普花', '彩帶非普花', '蘑菇', '煙霧'];
+const RIBBON_NO_COMMON = ['彩帶非普花', '蘑菇', '煙霧'];
+const NO_COMMON = ['非普花', '彩帶非普花', '非普花花苞', '蘑菇', '煙霧'];
+const NO_FLOWERS = ['蘑菇', '煙霧'];
+
+// [只顯示彩帶, 顯示普花, 顯示拿過精華的花] → shown when the items are
+// 拿過精華 / 沒拿過 / 還不知道. Unticking the third hides taken and unknown
+// flowers alike (unknown = the list isn't read yet, so flowers wait for it).
+const TRUTH_TABLE: Array<[boolean, boolean, boolean, string[], string[], string[]]> = [
+  [false, true, false, NO_FLOWERS, ALL, NO_FLOWERS],
+  [false, true, true, ALL, ALL, ALL],
+  [true, true, false, NO_FLOWERS, RIBBON, NO_FLOWERS],
+  [true, true, true, RIBBON, RIBBON, RIBBON],
+  [true, false, false, NO_FLOWERS, RIBBON_NO_COMMON, NO_FLOWERS],
+  [true, false, true, RIBBON_NO_COMMON, RIBBON_NO_COMMON, RIBBON_NO_COMMON],
+  [false, false, false, NO_FLOWERS, NO_COMMON, NO_FLOWERS],
+  [false, false, true, NO_COMMON, NO_COMMON, NO_COMMON],
+];
+
+test('三個子選項的八種勾法，在拿過、沒拿過、還不知道三種狀態下各自顯示的花，蘑菇與煙霧每一種都顯示', () => {
+  for (const [ribbonOnly, showCommon, showEssenceTaken, taken, notTaken, unknown] of TRUTH_TABLE) {
+    const filter = { ribbonOnly, showCommon, showEssenceTaken };
+    const label = JSON.stringify(filter);
+    assert.deepEqual(shown(filter, 'taken'), taken, `${label} 拿過`);
+    assert.deepEqual(shown(filter, 'notTaken'), notTaken, `${label} 沒拿過`);
+    assert.deepEqual(shown(filter, 'unknown'), unknown, `${label} 還不知道`);
+  }
+});
+
+test('拿過精華的彩帶花在只顯示彩帶底下：沒勾顯示拿過精華的花就藏，勾了就顯示', () => {
+  const ribbon = MIXED.彩帶非普花;
+  assert.equal(passesFlowerFilter(ribbon, { ribbonOnly: true, showCommon: true, showEssenceTaken: false }, NOW, 'taken'), false);
+  assert.equal(passesFlowerFilter(ribbon, { ribbonOnly: true, showCommon: true, showEssenceTaken: true }, NOW, 'taken'), true);
+});
+
+// Lets the layer hand every item to the filter while the list is 還沒讀到,
+// with no kind check of its own: mushrooms and smoke must keep drawing.
+test('蘑菇與煙霧就算傳入拿過或還不知道，沒勾顯示拿過精華的花也照樣顯示', () => {
+  const filter = { ribbonOnly: true, showCommon: false, showEssenceTaken: false };
+  for (const essence of ['taken', 'unknown'] as const) {
+    assert.equal(passesFlowerFilter(MIXED.蘑菇, filter, NOW, essence), true, essence);
+    assert.equal(passesFlowerFilter(MIXED.煙霧, filter, NOW, essence), true, essence);
+  }
 });
 
 test('原站若讓花苞帶著盛開時間，勾只顯示彩帶時花苞仍被藏掉', () => {
   for (const state of BUD_STATES) {
-    assert.equal(passesFlowerFilter(timedBud(state), { ribbonOnly: true, showCommon: true }, NOW), false, state);
+    const filter = { ribbonOnly: true, showCommon: true, showEssenceTaken: true };
+    assert.equal(passesFlowerFilter(timedBud(state), filter, NOW, 'notTaken'), false, state);
   }
 });
 
 test('取消顯示普花時，四個普花花種的花苞也藏掉', () => {
-  const hideCommon = { ribbonOnly: false, showCommon: false };
+  const hideCommon = { ribbonOnly: false, showCommon: false, showEssenceTaken: true };
   for (const [key, name] of COMMON_FLOWERS) {
     for (const state of ['Leaf', 'Bud']) {
-      assert.equal(passesFlowerFilter(bud(key, name, state), hideCommon, NOW), false, `${key} ${state}`);
+      assert.equal(passesFlowerFilter(bud(key, name, state), hideCommon, NOW, 'notTaken'), false, `${key} ${state}`);
     }
   }
 });

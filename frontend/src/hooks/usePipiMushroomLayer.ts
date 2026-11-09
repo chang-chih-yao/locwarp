@@ -3,12 +3,15 @@ import L from 'leaflet';
 import {
   PipiApiError,
   pipiClearCookie,
+  pipiEssenceMarks,
   pipiItems,
   pipiSetCookie,
   pipiStatus,
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
+import { ESSENCE_NOT_LOADED, essenceTaken, marksFromList } from '../pipiEssence';
+import type { PipiEssenceMarks } from '../pipiEssence';
 import { canCollectFruit, fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 import { PIPI_FRESH_MS, createPipiFetchPlanner } from '../pipiFetchPlanner';
 import type { PipiBox } from '../pipiFetchPlanner';
@@ -26,6 +29,9 @@ import { PIPI_MAX_MARKERS, selectPipiMarkers } from '../pipiMarkerSelection';
 //     so zooming back in follows the same reuse rule as a pan
 //   * one forced refresh per minute while the window is visible
 //   * stop entirely on missing / expired cookie; back off on 429
+//   * the 標記清單 (拿過精華) once per fetch loop, only once the cookie is
+//     known to be set, never below zoom 15; a 429 on it is retried after the
+//     back-off
 // The hide / reuse / fetch call is pipiFetchPlanner.ts'; this hook acts on it.
 // The backend adds its own 1 req/s spacing and a 30 s cache on top.
 
@@ -60,6 +66,9 @@ export interface PipiLayerStatus {
   updatedAt: number | null;
   error: string | null;
   zoom: number;
+  // The last 標記清單 read failed (429 included), so every flower shows. Kept
+  // until a read succeeds or a new fetch loop starts; off and no cookie reset it.
+  essenceFailed: boolean;
 }
 export type PipiKinds = Record<PipiKind, boolean>;
 
@@ -172,7 +181,11 @@ export function usePipiMushroomLayer({
   const [data, setData] = useState<{ res: PipiItemsResponse; offset: number; lngShift: number } | null>(null);
   const [status, setStatus] = useState<PipiLayerStatus>({
     phase: 'off', shown: 0, truncated: false, viewCapped: false, updatedAt: null, error: null, zoom: 0,
+    essenceFailed: false,
   });
+  // 標記狀態 (pipiEssence.ts). 還沒讀到 hides every flower through the 花的子篩選;
+  // a new loop keeps the old marks until its own list replaces them.
+  const [essenceMarks, setEssenceMarks] = useState<PipiEssenceMarks>(ESSENCE_NOT_LOADED);
   const [reloadToken, setReloadToken] = useState(0);
   // Markers taken off the map below the threshold while `data` stays. Kept
   // outside the fetch effect: a rerun of it can't know an earlier run hid
@@ -231,15 +244,21 @@ export function usePipiMushroomLayer({
     if (!map || !enabled) {
       setData(null);
       setMarkersHidden(false);
-      setStatus((s) => ({ ...s, phase: 'off', shown: 0, truncated: false, viewCapped: false, error: null }));
+      setEssenceMarks(ESSENCE_NOT_LOADED);
+      setStatus((s) => ({ ...s, phase: 'off', shown: 0, truncated: false, viewCapped: false, error: null, essenceFailed: false }));
       return;
     }
     if (configured === false) {
       setData(null);
       setMarkersHidden(false);
-      setStatus((s) => ({ ...s, phase: 'no_cookie', shown: 0, truncated: false, viewCapped: false, error: null }));
+      setEssenceMarks(ESSENCE_NOT_LOADED);
+      setStatus((s) => ({ ...s, phase: 'no_cookie', shown: 0, truncated: false, viewCapped: false, error: null, essenceFailed: false }));
       return;
     }
+    // A new loop (layer opened, cookie re-set, 重新整理) drops the read-failed
+    // line but not the marks: they stay until this loop's list replaces them,
+    // so 拿過精華 flowers don't flash up while it is on its way.
+    setStatus((s) => (s.essenceFailed ? { ...s, essenceFailed: false } : s));
     let disposed = false;
     let stopped = false;
     let blockedUntil = 0;
@@ -247,6 +266,46 @@ export function usePipiMushroomLayer({
     // the back-off shows it again.
     let blockedError = '';
     const planner = createPipiFetchPlanner();
+    // A list request is on its way: the planner only records a read once it
+    // answers (a 429 doesn't count), so this stops a second one meanwhile.
+    let essencePending = false;
+
+    const readEssence = async () => {
+      essencePending = true;
+      try {
+        const r = await pipiEssenceMarks();
+        if (disposed) return;
+        planner.recordEssenceRead();
+        setEssenceMarks((prev) => marksFromList(r.marks, prev));
+        setStatus((s) => (s.essenceFailed ? { ...s, essenceFailed: false } : s));
+      } catch (e) {
+        if (disposed) return;
+        const err = e instanceof PipiApiError ? e : null;
+        if (err && STOP_CODES.has(err.code)) {
+          // A bad cookie stops the loop, as it does for items (the list often
+          // goes out next to the items request that stops it). Not a failed
+          // read: the marks stay, so 拿過精華 flowers don't reappear on the
+          // data still drawn, and the next loop reads again.
+          stopped = true;
+          if (err.code === 'pipi_no_cookie') setConfigured(false);
+          setStatus((s) => ({ ...s, phase: 'error', error: (e as Error).message || String(e) }));
+          return;
+        }
+        if (err?.code === 'pipi_rate_limited') {
+          // Not a read: the backend's back-off outlives this loop, so the list
+          // is read again once it is over, like a held-back items fetch.
+          blockedUntil = Date.now() + (err.retryAfter ?? 60) * 1000;
+          blockedError = (e as Error).message || String(e);
+        } else {
+          planner.recordEssenceRead();
+        }
+        // 讀到了、一朵都沒有, not 還沒讀到: every flower shows again.
+        setEssenceMarks((prev) => marksFromList([], prev));
+        setStatus((s) => ({ ...s, essenceFailed: true }));
+      } finally {
+        essencePending = false;
+      }
+    };
     // How the kept data was fetched, restored by a reuse right after a hide.
     // A reuse only follows a fetch this run's planner recorded, so this always
     // describes the data that reuse draws.
@@ -279,15 +338,22 @@ export function usePipiMushroomLayer({
       reselectRef.current?.();
       const wasHidden = markersHiddenRef.current;
       setMarkersHidden(false);
+      // A stopped loop (bad cookie) sends nothing and leaves the list unread
+      // for the next loop.
       if (stopped) return;
+      const backedOff = Date.now() < blockedUntil;
+      // configured === null means the status answer hasn't come yet; this loop
+      // is replaced once it says true, and reading now would read twice.
+      const readEssenceNow = configured === true && !backedOff && !essencePending && planner.shouldReadEssence(decision);
       if (decision === 'reuse') {
         // With the markers already up the status is left alone, so the error
         // of a failed forced refresh or a 429 isn't replaced by the count.
         const kept = fetchedStatus;
         if (wasHidden && kept) setStatus((s) => ({ ...s, ...kept, error: null, zoom }));
+        if (readEssenceNow) void readEssence();
         return;
       }
-      if (Date.now() < blockedUntil) {
+      if (backedOff) {
         setStatus((s) => ({ ...s, phase: 'error', error: blockedError, zoom }));
         return;
       }
@@ -301,16 +367,23 @@ export function usePipiMushroomLayer({
       ctrl = c;
       setStatus((s) => ({ ...s, phase: 'loading', zoom }));
       try {
-        const res = await pipiItems({
+        const itemsReq = pipiItems({
           north: Math.min(85, wrapped.getNorth()), south: Math.max(-85, wrapped.getSouth()),
           east: Math.min(180, wrapped.getEast()), west: Math.max(-180, wrapped.getWest()), zoom,
         }, c.signal);
+        // Sent after items: the backend spaces calls 1 s apart, so mushrooms
+        // and smoke don't wait for the list; flowers do, by design.
+        if (readEssenceNow) void readEssence();
+        const res = await itemsReq;
         if (disposed || c.signal.aborted) return;
         planner.record({ bounds: toBox(padded), at: Date.now(), zoom, truncated: res.truncated });
         const result = { phase: res.region ? 'ok' : 'region', truncated: res.truncated, updatedAt: Date.now() } as const;
         fetchedStatus = result;
         setData({ res, offset: res.now_ms - Date.now(), lngShift });
-        setStatus((s) => ({ ...s, ...result, error: null, zoom }));
+        // The list request beside this one may have stopped the loop (a bad
+        // cookie) while items came back fine, e.g. from the backend cache: the
+        // data is drawn, but the stop's error stays on screen.
+        if (!stopped) setStatus((s) => ({ ...s, ...result, error: null, zoom }));
       } catch (e) {
         if (disposed || c.signal.aborted || (e as Error)?.name === 'AbortError') return;
         const err = e instanceof PipiApiError ? e : null;
@@ -377,14 +450,16 @@ export function usePipiMushroomLayer({
       const size = map.getSize();
       const picked = selectPipiMarkers({
         items: res.items,
+        // Before the cap, so hidden 拿過精華 flowers never use it up.
         shouldShow: (it) => {
           const kind = kindOf(it);
           if (!kinds[kind]) return false;
           const end = endMs(it, kind);
           if (end && end <= now) return false;
-          // No `kind === 'flower'` guard here: letting mushrooms / smoke
-          // through is the module's job, so its tests are what lock it in.
-          return passesFlowerFilter(it, flowerFilter, now);
+          // No `kind === 'flower'` guard here, and none for 還沒讀到 either:
+          // letting mushrooms / smoke through and holding flowers back is the
+          // module's job, so its tests are what lock it in.
+          return passesFlowerFilter(it, flowerFilter, now, essenceTaken(it, essenceMarks, now));
         },
         // Same lngShift as the marker itself, so the distance matches what is drawn.
         point: (it) => map.project([it.lat, it.lng + lngShift], zoom),
@@ -501,7 +576,10 @@ export function usePipiMushroomLayer({
     };
   }, [
     data, markersHidden, enabled, kinds.mushroom, kinds.flower, kinds.smoke,
-    flowerFilter.ribbonOnly, flowerFilter.showCommon, markerSize, mapRef,
+    flowerFilter.ribbonOnly, flowerFilter.showCommon, flowerFilter.showEssenceTaken, markerSize, mapRef,
+    // Here and never in the fetch effect: there it would restart the loop and
+    // refetch items on every list answer.
+    essenceMarks,
   ]);
 
   const refresh = useCallback(() => setReloadToken((x) => x + 1), []);

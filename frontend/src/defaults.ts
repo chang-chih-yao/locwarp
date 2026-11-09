@@ -24,12 +24,13 @@ export const INITIAL_PIPI_KINDS: Readonly<Record<PipiKindKey, boolean>> = {
   smoke: false,
 };
 
-/** 花的子篩選：只顯示彩帶花、顯示普花（GLOSSARY.md: 彩帶花、普花）。 */
-export type PipiFlowerFilter = { ribbonOnly: boolean; showCommon: boolean };
+/** 花的子篩選：只顯示彩帶花、顯示普花、顯示拿過精華的花（GLOSSARY.md: 彩帶花、普花、拿過精華）。 */
+export type PipiFlowerFilter = { ribbonOnly: boolean; showCommon: boolean; showEssenceTaken: boolean };
 
 export const INITIAL_PIPI_FLOWER_FILTER: Readonly<PipiFlowerFilter> = {
   ribbonOnly: false,
   showCommon: true,
+  showEssenceTaken: false,
 };
 
 /** 標記大小（GLOSSARY.md）：小、中、大三級。 */

@@ -104,3 +104,60 @@ test('縮小期間資料滿 60 秒，放大回同一個畫面就重抓，不沿�
   assert.equal(planner.plan({ zoom: 14, view: VIEW, now: T0 + 5000, force: false }), 'hide');
   assert.equal(planner.plan({ zoom: 15, view: VIEW, now: T0 + 60_000, force: false }), 'fetch');
 });
+
+// 標記清單 (拿過精華, GLOSSARY.md): read once per fetch loop. One planner is
+// one loop; opening the layer, a cookie re-set and 重新整理 each start a new
+// one. The decisions below come from `plan` itself, as the layer feeds them.
+
+test('新的一輪在第一個不是 hide 的決定時要讀標記清單', () => {
+  const planner = createPipiFetchPlanner();
+  const decision = planner.plan({ zoom: 15, view: VIEW, now: T0, force: false });
+  assert.equal(decision, 'fetch');
+  assert.equal(planner.shouldReadEssence(decision), true);
+});
+
+test('hide 時不讀標記清單；zoom 14 打開圖層、縮放到 15 那個決定才要讀', () => {
+  const planner = createPipiFetchPlanner();
+  const hidden = planner.plan({ zoom: 14, view: VIEW, now: T0, force: false });
+  assert.equal(hidden, 'hide');
+  assert.equal(planner.shouldReadEssence(hidden), false);
+  const forcedWhileHidden = planner.plan({ zoom: 14, view: VIEW, now: T0 + 60_000, force: true });
+  assert.equal(planner.shouldReadEssence(forcedWhileHidden), false);
+  const back = planner.plan({ zoom: 15, view: VIEW, now: T0 + 61_000, force: false });
+  assert.equal(planner.shouldReadEssence(back), true);
+});
+
+// A 429 on the list leaves it unread; after the back-off the next decision
+// may well be a reuse of items fetched earlier in the same loop.
+test('還沒記下讀過時，沿用資料的決定也要讀標記清單', () => {
+  const planner = plannerWithFetch();
+  const decision = planner.plan({ zoom: 15, view: VIEW, now: T0 + 1000, force: false });
+  assert.equal(decision, 'reuse');
+  assert.equal(planner.shouldReadEssence(decision), true);
+});
+
+test('記下讀過之後，同一輪的強制刷新、平移、縮放回來都不再讀標記清單', () => {
+  const planner = createPipiFetchPlanner();
+  assert.equal(planner.shouldReadEssence(planner.plan({ zoom: 15, view: VIEW, now: T0, force: false })), true);
+  planner.recordEssenceRead();
+  planner.record({ bounds: RECORDED, at: T0, zoom: 15, truncated: false });
+  const elsewhere: PipiBox = { north: 25.16, south: 25.13, east: 121.54, west: 121.49 };
+  const decisions = [
+    planner.plan({ zoom: 15, view: VIEW, now: T0 + 1000, force: true }),
+    // Panned out of the recorded box: a fetch the test doesn't record, so
+    // panning back still reuses the T0 fetch.
+    planner.plan({ zoom: 15, view: elsewhere, now: T0 + 2000, force: false }),
+    planner.plan({ zoom: 15, view: VIEW, now: T0 + 3000, force: false }),
+    planner.plan({ zoom: 14, view: VIEW, now: T0 + 4000, force: false }),
+    planner.plan({ zoom: 16, view: VIEW, now: T0 + 5000, force: false }),
+  ];
+  assert.deepEqual(decisions, ['fetch', 'fetch', 'reuse', 'hide', 'reuse']);
+  for (const d of decisions) assert.equal(planner.shouldReadEssence(d), false, d);
+});
+
+test('新的 planner（新的一輪）又會要讀標記清單', () => {
+  const first = createPipiFetchPlanner();
+  first.recordEssenceRead();
+  const next = createPipiFetchPlanner();
+  assert.equal(next.shouldReadEssence(next.plan({ zoom: 15, view: VIEW, now: T0, force: false })), true);
+});

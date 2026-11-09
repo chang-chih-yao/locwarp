@@ -1,0 +1,78 @@
+// 蘑菇地圖 拿過精華 rules (GLOSSARY.md): the identity of a mark, the
+// 標記狀態, and whether a flower counts as 拿過精華. The site's list
+// (`FlowerEssenceData.ashx`, read through GET /api/pipi/essence) is the only
+// source of marks; a site format change is fixed here.
+//
+// No runtime imports and erasable-syntax-only so `node --test` can load it
+// directly; type-only imports are stripped whole by Node.
+import type { PipiEssenceMark, PipiItem } from './services/api';
+
+/**
+ * The identity of a 拿過精華 mark: one bloom of one flower, so a flower that
+ * wilts and blooms again is a different mark. Same rule as the site's
+ * mfmap.min.js (checked 2026-11-09).
+ *
+ * @param id the item's `id` (list: `mapObjectId`). The backend forwards the
+ *   site's value untyped, so a number is accepted and equals its string form.
+ * @param bloomedMs the item's `bloomedMs` (list: `bloomedTimeMs`).
+ * @returns `"<trimmed id>|<floored bloom ms>"`, or null when the id is empty
+ *   or the bloom time is not a finite number > 0 (a string counts as unset).
+ */
+export function essenceMarkId(id: unknown, bloomedMs: unknown): string | null {
+  if (typeof id !== 'string' && typeof id !== 'number') return null;
+  const trimmed = String(id).trim();
+  if (!trimmed || typeof bloomedMs !== 'number' || !Number.isFinite(bloomedMs) || bloomedMs <= 0) return null;
+  return `${trimmed}|${Math.floor(bloomedMs)}`;
+}
+
+/**
+ * 標記狀態: mark identity → when the mark stops counting (server ms; the
+ * flower's wilting time). `null` is 還沒讀到, kept apart from an empty map
+ * (讀到了、一朵都沒有): otherwise an account that never marked anything would
+ * wait forever for its flowers.
+ */
+export type PipiEssenceMarks = ReadonlyMap<string, number> | null;
+
+export const ESSENCE_NOT_LOADED: PipiEssenceMarks = null;
+
+/** Whether a point is 拿過精華; `unknown` only while the list is 還沒讀到. */
+export type PipiEssenceTaken = 'taken' | 'notTaken' | 'unknown';
+
+/**
+ * 標記狀態 from a list answer. The list replaces the state whole, never
+ * merged, so a mark cancelled on the site goes away on the next read.
+ *
+ * @param list the marks GET /api/pipi/essence returned.
+ * @param prev the current 標記狀態.
+ * @returns `prev` itself when it is loaded and holds exactly these marks, so
+ *   the layer skips a full rebuild (which closes and reopens the popup) for an
+ *   unchanged list; otherwise a new state. `prev` is never changed.
+ */
+export function marksFromList(list: readonly PipiEssenceMark[], prev: PipiEssenceMarks): ReadonlyMap<string, number> {
+  const next = new Map<string, number>();
+  for (const m of list) {
+    const key = essenceMarkId(m.id, m.bloomedMs);
+    if (key) next.set(key, m.wiltingMs);
+  }
+  if (prev && prev.size === next.size && [...next].every(([k, v]) => prev.get(k) === v)) return prev;
+  return next;
+}
+
+/**
+ * Whether a point counts as 拿過精華 at a given server time.
+ *
+ * @param item the point; only `id` and `bloomedMs` are read, so callers need
+ *   not check the 點位種類.
+ * @param marks the 標記狀態.
+ * @param nowMs server-clock time in ms (local clock + server offset). The site
+ *   uses the local clock here; LocWarp deliberately doesn't.
+ * @returns `unknown` while `marks` is 還沒讀到; `taken` when the point has an
+ *   identity that is in `marks` with a time still ahead of `nowMs` (0 never
+ *   is); otherwise `notTaken`.
+ */
+export function essenceTaken(item: Pick<PipiItem, 'id' | 'bloomedMs'>, marks: PipiEssenceMarks, nowMs: number): PipiEssenceTaken {
+  if (marks === null) return 'unknown';
+  const key = essenceMarkId(item.id, item.bloomedMs);
+  const until = key === null ? undefined : marks.get(key);
+  return until !== undefined && until > nowMs ? 'taken' : 'notTaken';
+}

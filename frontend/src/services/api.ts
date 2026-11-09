@@ -473,6 +473,8 @@ export interface PipiItemsResponse {
   truncated: boolean
 }
 export interface PipiCookieResult { configured: boolean; logged_in: boolean; error: string | null }
+/** One 拿過精華 mark (GLOSSARY.md), normalised by the backend; `wiltingMs` 0 = unset. */
+export interface PipiEssenceMark { id: string; bloomedMs: number; wiltingMs: number }
 
 export class PipiApiError extends Error {
   code: string
@@ -520,3 +522,4 @@ export const pipiItems = (
   })
   return pipiRequest<PipiItemsResponse>('GET', `/api/pipi/items?${q.toString()}`, undefined, signal)
 }
+export const pipiEssenceMarks = () => pipiRequest<{ marks: PipiEssenceMark[] }>('GET', '/api/pipi/essence')

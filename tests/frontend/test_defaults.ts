@@ -60,24 +60,47 @@ test('壞掉或不是物件的點位種類設定整份用初始值', () => {
   }
 });
 
-test('沒存過花的子篩選時顯示全部的花：不限彩帶、顯示普花', () => {
-  assert.deepEqual(resolvePipiFlowerFilter(null), { ribbonOnly: false, showCommon: true });
+// 顯示拿過精華的花 starts unticked: what the player wants is that 拿過精華
+// flowers stop showing up (spec Q8).
+test('沒存過花的子篩選時：不限彩帶、顯示普花、不顯示拿過精華的花', () => {
+  assert.deepEqual(resolvePipiFlowerFilter(null), { ribbonOnly: false, showCommon: true, showEssenceTaken: false });
 });
 
-test('存過的花的子篩選原樣保留，四種勾法都是', () => {
+test('存過的花的子篩選原樣保留，三個子選項的八種勾法都是', () => {
   for (const ribbonOnly of [false, true]) {
     for (const showCommon of [false, true]) {
-      const saved = { ribbonOnly, showCommon };
-      assert.deepEqual(resolvePipiFlowerFilter(JSON.stringify(saved)), saved);
+      for (const showEssenceTaken of [false, true]) {
+        const saved = { ribbonOnly, showCommon, showEssenceTaken };
+        assert.deepEqual(resolvePipiFlowerFilter(JSON.stringify(saved)), saved);
+      }
     }
   }
 });
 
-test('存下來的花的子篩選缺少或不是布林值的欄位用初始值，另一欄照存的', () => {
-  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":true}'), { ribbonOnly: true, showCommon: true });
-  assert.deepEqual(resolvePipiFlowerFilter('{"showCommon":false}'), { ribbonOnly: false, showCommon: false });
-  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":"yes","showCommon":false}'), { ribbonOnly: false, showCommon: false });
-  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":true,"showCommon":0}'), { ribbonOnly: true, showCommon: true });
+test('拿過精華功能之前存的兩欄設定：兩欄照存的，顯示拿過精華的花用初始值（不勾）', () => {
+  for (const ribbonOnly of [false, true]) {
+    for (const showCommon of [false, true]) {
+      assert.deepEqual(
+        resolvePipiFlowerFilter(JSON.stringify({ ribbonOnly, showCommon })),
+        { ribbonOnly, showCommon, showEssenceTaken: false },
+      );
+    }
+  }
+});
+
+test('存下來的花的子篩選缺少或不是布林值的欄位用初始值，其他欄照存的', () => {
+  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":true}'), { ribbonOnly: true, showCommon: true, showEssenceTaken: false });
+  assert.deepEqual(resolvePipiFlowerFilter('{"showCommon":false}'), { ribbonOnly: false, showCommon: false, showEssenceTaken: false });
+  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":"yes","showCommon":false}'), { ribbonOnly: false, showCommon: false, showEssenceTaken: false });
+  assert.deepEqual(resolvePipiFlowerFilter('{"ribbonOnly":true,"showCommon":0}'), { ribbonOnly: true, showCommon: true, showEssenceTaken: false });
+  assert.deepEqual(resolvePipiFlowerFilter('{"showEssenceTaken":true}'), { ribbonOnly: false, showCommon: true, showEssenceTaken: true });
+  for (const bad of ['"yes"', '1', 'null', '"true"']) {
+    assert.deepEqual(
+      resolvePipiFlowerFilter(`{"ribbonOnly":true,"showCommon":false,"showEssenceTaken":${bad}}`),
+      { ribbonOnly: true, showCommon: false, showEssenceTaken: false },
+      bad,
+    );
+  }
 });
 
 test('壞掉或不是物件的花的子篩選設定整份用初始值', () => {

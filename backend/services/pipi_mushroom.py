@@ -30,6 +30,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -46,6 +47,8 @@ logger = logging.getLogger("locwarp")
 
 BASE_URL = "https://pipimushroom.com/"
 MAP_DATA_ENDPOINT = "Handlers/MfMapData.ashx"
+# The account's 拿過精華 marks (GLOSSARY.md); same envelope and login as items.
+ESSENCE_ENDPOINT = "Handlers/FlowerEssenceData.ashx"
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -149,6 +152,34 @@ def region_for(lat: float, lng: float) -> str | None:
     if 0.85 <= lat <= 7.4 and 99.5 <= lng <= 119.3:
         return "MA"
     return None
+
+
+def _positive_ms(v: object) -> int | None:
+    """A site time field as whole ms, or None unless it is a finite number > 0.
+    bool is excluded: Python counts it as int, the frontend's Number.isFinite doesn't."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    if not math.isfinite(v) or v <= 0:
+        return None
+    return math.floor(v)
+
+
+def _normalize_mark(raw: object) -> dict | None:
+    """One list entry → ``{id: str, bloomedMs: int, wiltingMs: int}``, or None
+    when it has no identity (empty id, bloom time not a number > 0)."""
+    if not isinstance(raw, dict):
+        return None
+    mid = raw.get("mapObjectId")
+    # A string (measured 2026-11-09) or a JSON integer. A float is dropped:
+    # Python writes 7.0 as "7.0" where the frontend's String() writes "7", so
+    # it could never match an item.
+    if isinstance(mid, bool) or not isinstance(mid, (str, int)):
+        return None
+    mid = str(mid).strip()
+    bloomed = _positive_ms(raw.get("bloomedTimeMs"))
+    if not mid or bloomed is None:
+        return None
+    return {"id": mid, "bloomedMs": bloomed, "wiltingMs": _positive_ms(raw.get("wiltingTimeMs")) or 0}
 
 
 def _b64(data: bytes) -> str:
@@ -425,6 +456,23 @@ class PipiMushroomClient:
             self._cache.clear()
         self._cache[key] = (time.monotonic(), result)
         return result
+
+    async def essence_marks(self) -> list[dict]:
+        """The account's 拿過精華 marks, every region at once.
+
+        Never cached: the frontend reads it once per fetch loop, and a cached
+        answer would hide marks just made on the phone. It goes through
+        ``request``, so it shares items' queue, spacing and Retry-After.
+
+        Returns:
+            ``[{id: str, bloomedMs: int, wiltingMs: int}]``; entries without
+            an identity are dropped, an unset or invalid wilting time is 0.
+        """
+        j = await self.request(ESSENCE_ENDPOINT, {"action": "list"})
+        rows = j.get("items")
+        if not isinstance(rows, list):
+            return []
+        return [m for m in (_normalize_mark(x) for x in rows) if m]
 
     @staticmethod
     def _normalize(raw: object) -> dict | None:

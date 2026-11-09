@@ -208,6 +208,9 @@ const PipiMushroomPanel: React.FC<Props> = ({
           >{t('map.pipi_refresh')}</button>
         )}
       </div>
+      {enabled && status.essenceFailed && (
+        <div style={{ marginTop: 4, fontSize: 11, color: '#ff8a8a', lineHeight: 1.45 }}>{t('map.pipi_essence_load_failed')}</div>
+      )}
       {enabled && status.truncated && status.phase === 'ok' && (
         <div style={WARN_BOX}>{t('map.pipi_truncated')}</div>
       )}

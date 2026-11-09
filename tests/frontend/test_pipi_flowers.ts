@@ -187,17 +187,31 @@ test('取消顯示普花時，四個普花花種的花苞也藏掉', () => {
   }
 });
 
-// 撈水果 (GLOSSARY.md) is offered only for a flower that is not a 花苞 and has not wilted.
-test('盛開的花可以撈水果，同一朵花到了枯萎時間就不行', () => {
-  const f = flower('f:White:Geranium', '白色天竺葵');
+// 撈水果 (GLOSSARY.md) is offered only for 彩帶花: only they bear 水果 (GLOSSARY.md).
+// Same check and boundaries as the popup's ribbon line (pipi-fruit-approach 02).
+test('彩帶花可以撈水果，盛開後剛好滿 60 分鐘就不行', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵', NOW - 10 * MIN);
   assert.equal(canCollectFruit(f, NOW), true);
-  assert.equal(canCollectFruit(f, f.wiltingMs! - 1), true);
-  assert.equal(canCollectFruit(f, f.wiltingMs!), false);
-  assert.equal(canCollectFruit(f, f.wiltingMs! + HOUR), false);
+  assert.equal(canCollectFruit(f, f.bloomedMs! + 60 * MIN - 1), true);
+  assert.equal(canCollectFruit(f, f.bloomedMs! + 60 * MIN), false);
+  // Still in bloom 5 h later, nowhere near wilting: the old "盛開 and not wilted" rule offered it.
+  assert.equal(canCollectFruit(f, f.bloomedMs! + 5 * HOUR), false);
 });
 
-// Real 花苞 have wiltingMs 0, which already counts as "not wilted"; timedBud
-// carries a future wiltingMs too, so in both cases only the 花苞 rule rejects.
+test('剛好在盛開那一刻就可以撈水果，還沒到盛開時間不行', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵', NOW);
+  assert.equal(canCollectFruit(f, NOW), true);
+  assert.equal(canCollectFruit(f, NOW - 1), false);
+});
+
+test('原站若讓花在盛開後一小時內就枯萎：到了枯萎時間就不能撈水果', () => {
+  const early = { ...flower('f:White:Geranium', '白色天竺葵', NOW - 10 * MIN), wiltingMs: NOW + 20 * MIN };
+  assert.equal(canCollectFruit(early, NOW + 20 * MIN - 1), true);
+  assert.equal(canCollectFruit(early, NOW + 20 * MIN), false);
+});
+
+// Real 花苞 have both time fields at 0, which already fails the 彩帶花 rule;
+// timedBud carries in-window times, so there only the 花苞 rule rejects.
 test('花苞的三個階段（含 Pre-Flower 等寫法）都不能撈水果', () => {
   for (const state of BUD_STATES) {
     assert.equal(canCollectFruit(bud('f:White:Geranium', '白色天竺葵', state), NOW), false, `${state} 時間為 0`);
@@ -205,16 +219,21 @@ test('花苞的三個階段（含 Pre-Flower 等寫法）都不能撈水果', ()
   }
 });
 
-test('蘑菇與煙霧不能撈水果', () => {
+test('蘑菇與煙霧不能撈水果，就算原站讓它們帶著彩帶期內的盛開時間', () => {
+  const times = { bloomedMs: NOW - 10 * MIN, wiltingMs: NOW + 23 * HOUR };
   assert.equal(canCollectFruit(MIXED.蘑菇, NOW), false);
   assert.equal(canCollectFruit(MIXED.煙霧, NOW), false);
+  assert.equal(canCollectFruit({ ...MIXED.蘑菇, ...times }, NOW), false);
+  assert.equal(canCollectFruit({ ...MIXED.煙霧, ...times }, NOW), false);
 });
 
-// "Wilted" needs a set wiltingMs. Not seen in the sample: these guard a
-// bloomed flower whose wiltingMs arrives as 0, missing or a string.
-test('原站若讓盛開的花沒有枯萎時間（0、沒給、字串），當作還沒枯萎，可以撈水果', () => {
-  const f = flower('f:White:Geranium', '白色天竺葵');
+// Not seen in the sample: guards a bloomed flower whose wiltingMs arrives as
+// 0, missing or a string. This is where the 彩帶花 rule differs from the old
+// "盛開 and not wilted" rule (pipi-fruit-approach 01), which counted an unset
+// wiltingMs as not wilted and so offered 撈水果.
+test('原站若讓盛開的花沒有枯萎時間（0、沒給、字串），照彩帶花的規則不能撈水果', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵', NOW - 10 * MIN);
   for (const wiltingMs of [0, undefined, String(f.wiltingMs) as unknown as number]) {
-    assert.equal(canCollectFruit({ ...f, wiltingMs }, NOW), true, String(wiltingMs));
+    assert.equal(canCollectFruit({ ...f, wiltingMs }, NOW), false, String(wiltingMs));
   }
 });

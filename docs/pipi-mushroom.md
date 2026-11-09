@@ -2,8 +2,8 @@
 
 Map overlay showing the mushrooms, flowers and smoke points that
 [pipimushroom.com](https://pipimushroom.com/mfmap.aspx) (蘑菇地圖 tab) marks,
-with teleport / navigate buttons in each popup, plus 撈水果 on blooming
-flowers. The data needs the user's own
+with teleport / navigate buttons in each popup, plus 撈水果 on 彩帶花.
+The data needs the user's own
 Google login on that site, so LocWarp proxies it with the user's browser
 cookie. A Chrome extension keeps that cookie in sync.
 
@@ -146,20 +146,28 @@ are in `frontend/src/defaults.ts`.
 
 ## 撈水果: the 瞬移+撈水果 button (2026-11-05)
 
-Terms follow `GLOSSARY.md` (種花, 撈水果, 花農專用模式). Decisions and their
-Q numbers: `.scratch/pipi-fruit-approach/issues/01-popup-fruit-button.md`.
+Terms follow `GLOSSARY.md` (種花, 水果, 撈水果, 彩帶花, 花農專用模式). Decisions and their
+Q numbers: `.scratch/pipi-fruit-approach/issues/01-popup-fruit-button.md`;
+02 in the same folder narrowed the button to 彩帶花 (2026-11-09).
 
 **Why.** The game gives a flower's fruit only to a player who walks to it
 and 種花 on the way. Teleporting straight onto the flower leaves no trail,
 plants nothing and gets no fruit. So the button teleports next to the flower
 first, then walks onto it.
 
-**When it shows** (`canCollectFruit`): a flower that is not a 花苞 and has not
-wilted, checked with server time when the popup opens. Wilted means
-`wiltingMs` is set and `now ≥ wiltingMs`; an unset `wiltingMs` counts as not
-wilted. Prune runs every 30 s, so a flower that just wilted can
-still be on the map. Mushrooms and smoke never get the button. It sits on its
-own full-width row under the teleport / navigate pair.
+**When it shows** (`canCollectFruit`): 彩帶花 only, which is the same
+`ribbonEndMs` check as the popup's ribbon line, with the same boundaries and
+the same server time. That time is taken when the popup opens, not when the marker was
+built, because the 彩帶期 may have ended in between. So the button shows exactly when the
+ribbon line does. The game only grows 水果 on a 彩帶花 while a player 種花
+nearby during its 彩帶期. A flower past it can only give 精華 by 採精華, and
+walking to it gets no fruit. Until 2026-11-09 the button showed on any flower that was not a 花苞
+and had not wilted. Back then no one knew 水果 needed the 彩帶期, and an unset
+`wiltingMs` counted as not wilted. Now such a flower is not 彩帶花 and gets
+no button. A 彩帶期 that ends while the popup is open keeps the button, and
+pressing it still runs, like the other open-time checks. Mushrooms and smoke never get
+the button. It sits on its own full-width row under the teleport / navigate
+pair.
 
 **The flow** (`runFruitApproach`):
 

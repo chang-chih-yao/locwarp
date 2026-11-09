@@ -64,17 +64,15 @@ export function fmtRibbonCountdown(ms: number): string {
 }
 
 /**
- * Whether the popup offers 撈水果 for the item: a flower that is not a 花苞
- * and has not wilted at `nowMs`. Without a set `wiltingMs` it counts as not
- * wilted.
+ * Whether the popup offers 撈水果 for the item: only 彩帶花 bear 水果, so this
+ * is exactly {@link ribbonEndMs}'s check, boundaries included, and agrees with
+ * the popup's ribbon line. A flower without a set `wiltingMs` is not 彩帶花.
  *
  * @param item a 蘑菇地圖 item of any kind.
  * @param nowMs server-clock time in ms, as for {@link ribbonEndMs}.
  */
 export function canCollectFruit(item: PipiItem, nowMs: number): boolean {
-  if (item.itemKind !== 'flower' || isBud(item)) return false;
-  const wilting = item.wiltingMs;
-  return !(isSetTime(wilting) && nowMs >= wilting);
+  return ribbonEndMs(item, nowMs) !== null;
 }
 
 /** Whether the item is 普花 (including its 花苞). */

@@ -133,8 +133,7 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
   // have ended since, and then the line is left out instead of going negative.
   const ribbonEnd = ribbonEndMs(it, now);
   const ribbonLine = ribbonEnd === null ? '' : t('map.pipi_ribbon_ends_in', { time: fmtRibbonCountdown(ribbonEnd - now) });
-  // Also an open-time check: prune only runs every 30 s, so a flower that
-  // wilted since is still on the map for a while.
+  // Same open-time 彩帶花 check as the ribbon line above.
   const fruit = canCollectFruit(it, now);
   let timeLine = '';
   if (end && end > now) {

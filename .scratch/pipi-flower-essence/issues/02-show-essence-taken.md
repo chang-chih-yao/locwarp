@@ -22,6 +22,7 @@ Spec: `.scratch/pipi-flower-essence/spec.md`
   - 是不是拿過精華，在建立 marker 時判斷；整層重建和重新挑選都要判斷。icon 的快取鍵要包含這一項。
   - ✓ 放在圖示的外層，跟內層的圓並列，不放進內層。內層是圓形加 `overflow: hidden`，角落的 ✓ 放在裡面會被切掉。
   - ✓ 跟著標記大小縮放，小、中、大三種都看得清楚。
+    - 注意：`--pipi-box`、`--pipi-ring`、`--pipi-dot` 現在是 inline 設在內層 `.pipi-pin-inner` 上（`usePipiMushroomLayer.ts` 建 icon 的 `pxStyle`）。✓ 放在外層、跟內層並列，拿不到這些變數，要把變數移到兩者共同的外層，或讓 ✓ 自己帶尺寸。
   - 沒拿過的花沒有 ✓；還不知道（標記清單還沒讀到）的花也沒有，清單回來之後才出現。
 - [ ] 勾起來時，標記清單還沒讀到也照常畫花，因為沒有東西要藏。這已經由 01 號票的花的子篩選處理，這張票只要確認沒有在圖層另外擋掉。
 - [ ] 切換這個勾選框只重畫 marker，不會送出 items 請求，也不會送出標記清單請求。
@@ -32,6 +33,7 @@ Spec: `.scratch/pipi-flower-essence/spec.md`
   - 勾著時用 fetch 攔截延遲清單回覆，打開圖層：花跟蘑菇一起出現，✓ 等清單回來才出現。
   - 切換勾選框時，Network 沒有新的 `/api/pipi/items` 或 `/api/pipi/essence` 請求。
 - [ ] 文件：蘑菇地圖設計文件的面板那一列補上第三個子篩選，並說明 ✓ 的意思。
+  - 花的子篩選那一段現在寫 "the panel has no checkbox for it yet, so it stays off"（`docs/pipi-mushroom.md` 的 `showEssenceTaken` 那一項），這句要刪掉。
 - [ ] 回歸：`tests/frontend/*.ts`、`tests/pipi/` 全部照跑，`npm run build` 要通過。有任何 skipped 都要說明。
 
 ## 參考

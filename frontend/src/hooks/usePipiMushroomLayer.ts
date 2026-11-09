@@ -270,6 +270,23 @@ export function usePipiMushroomLayer({
     // answers (a 429 doesn't count), so this stops a second one meanwhile.
     let essencePending = false;
 
+    // What a failed request does to this loop, the same for items and the
+    // list: a bad cookie stops it, a 429 holds requests back until it is over.
+    const absorbFailure = (e: unknown): 'stop' | 'rateLimited' | 'other' => {
+      const err = e instanceof PipiApiError ? e : null;
+      if (err && STOP_CODES.has(err.code)) {
+        stopped = true;
+        if (err.code === 'pipi_no_cookie') setConfigured(false);
+        return 'stop';
+      }
+      if (err?.code === 'pipi_rate_limited') {
+        blockedUntil = Date.now() + (err.retryAfter ?? 60) * 1000;
+        blockedError = (e as Error).message || String(e);
+        return 'rateLimited';
+      }
+      return 'other';
+    };
+
     const readEssence = async () => {
       essencePending = true;
       try {
@@ -280,25 +297,17 @@ export function usePipiMushroomLayer({
         setStatus((s) => (s.essenceFailed ? { ...s, essenceFailed: false } : s));
       } catch (e) {
         if (disposed) return;
-        const err = e instanceof PipiApiError ? e : null;
-        if (err && STOP_CODES.has(err.code)) {
-          // A bad cookie stops the loop, as it does for items (the list often
-          // goes out next to the items request that stops it). Not a failed
-          // read: the marks stay, so 拿過精華 flowers don't reappear on the
-          // data still drawn, and the next loop reads again.
-          stopped = true;
-          if (err.code === 'pipi_no_cookie') setConfigured(false);
+        const failure = absorbFailure(e);
+        if (failure === 'stop') {
+          // The list often goes out next to the items request that stops the
+          // loop. Not a failed read: the marks stay, so 拿過精華 flowers don't
+          // reappear on the data still drawn, and the next loop reads again.
           setStatus((s) => ({ ...s, phase: 'error', error: (e as Error).message || String(e) }));
           return;
         }
-        if (err?.code === 'pipi_rate_limited') {
-          // Not a read: the backend's back-off outlives this loop, so the list
-          // is read again once it is over, like a held-back items fetch.
-          blockedUntil = Date.now() + (err.retryAfter ?? 60) * 1000;
-          blockedError = (e as Error).message || String(e);
-        } else {
-          planner.recordEssenceRead();
-        }
+        // A 429 isn't a read: the backend's back-off outlives this loop, so
+        // the list is read again once it is over, like a held-back items fetch.
+        if (failure === 'other') planner.recordEssenceRead();
         // 讀到了、一朵都沒有, not 還沒讀到: every flower shows again.
         setEssenceMarks((prev) => marksFromList([], prev));
         setStatus((s) => ({ ...s, essenceFailed: true }));
@@ -344,13 +353,13 @@ export function usePipiMushroomLayer({
       const backedOff = Date.now() < blockedUntil;
       // configured === null means the status answer hasn't come yet; this loop
       // is replaced once it says true, and reading now would read twice.
-      const readEssenceNow = configured === true && !backedOff && !essencePending && planner.shouldReadEssence(decision);
+      const shouldReadEssenceNow = configured === true && !backedOff && !essencePending && planner.shouldReadEssence(decision);
       if (decision === 'reuse') {
         // With the markers already up the status is left alone, so the error
         // of a failed forced refresh or a 429 isn't replaced by the count.
         const kept = fetchedStatus;
         if (wasHidden && kept) setStatus((s) => ({ ...s, ...kept, error: null, zoom }));
-        if (readEssenceNow) void readEssence();
+        if (shouldReadEssenceNow) void readEssence();
         return;
       }
       if (backedOff) {
@@ -373,7 +382,7 @@ export function usePipiMushroomLayer({
         }, c.signal);
         // Sent after items: the backend spaces calls 1 s apart, so mushrooms
         // and smoke don't wait for the list; flowers do, by design.
-        if (readEssenceNow) void readEssence();
+        if (shouldReadEssenceNow) void readEssence();
         const res = await itemsReq;
         if (disposed || c.signal.aborted) return;
         planner.record({ bounds: toBox(padded), at: Date.now(), zoom, truncated: res.truncated });
@@ -386,17 +395,8 @@ export function usePipiMushroomLayer({
         if (!stopped) setStatus((s) => ({ ...s, ...result, error: null, zoom }));
       } catch (e) {
         if (disposed || c.signal.aborted || (e as Error)?.name === 'AbortError') return;
-        const err = e instanceof PipiApiError ? e : null;
-        const message = (e as Error).message || String(e);
-        if (err?.code === 'pipi_rate_limited') {
-          blockedUntil = Date.now() + (err.retryAfter ?? 60) * 1000;
-          blockedError = message;
-        }
-        if (err && STOP_CODES.has(err.code)) {
-          stopped = true;
-          if (err.code === 'pipi_no_cookie') setConfigured(false);
-        }
-        setStatus((s) => ({ ...s, phase: 'error', error: message, zoom }));
+        absorbFailure(e);
+        setStatus((s) => ({ ...s, phase: 'error', error: (e as Error).message || String(e), zoom }));
       }
     };
 

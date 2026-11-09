@@ -6,6 +6,7 @@ What this locks:
 - the endpoint and the exact `{action: "list"}` payload, the site's own call;
 - normalisation into `{id: str, bloomedMs: int, wiltingMs: int}`, so the
   frontend's identity rule sees one shape whatever type the site sends;
+- an answer with no `items` list is pipi_unavailable, not an empty list;
 - no cache: every call reaches `request`, because the list is read once per
   fetch loop and a cached answer would hide marks made on the phone;
 - PipiError from `request` (login, rate limit) propagates unchanged, so the
@@ -82,11 +83,20 @@ assert marks == [
 assert all(type(m["bloomedMs"]) is int and type(m["wiltingMs"]) is int for m in marks), marks
 print("ok  normalise: id -> trimmed str, bloomedMs floored int, bad rows dropped, bad wiltingMs -> 0")
 
-# The site sends no `items` key, or not a list: an empty list, not a crash.
+# The site's format changed and sends no `items` list: an error, not an
+# empty list. An empty list would show every 拿過精華 flower with no hint;
+# pipi_unavailable makes the panel say 精華標記讀取失敗 (user story 33).
 for bad in ({}, {"items": None}, {"items": "x"}, {"items": {"a": 1}}):
     reply = bad
-    assert asyncio.run(c.essence_marks()) == [], bad
-print("ok  missing or non-list items -> []")
+    try:
+        asyncio.run(c.essence_marks())
+    except pm.PipiError as e:
+        assert (e.code, e.status) == ("pipi_unavailable", 502), (bad, e.code, e.status)
+    else:
+        raise AssertionError(f"{bad} must raise pipi_unavailable, not read as no marks")
+reply = {"items": []}
+assert asyncio.run(c.essence_marks()) == []
+print("ok  missing or non-list items -> pipi_unavailable; items: [] -> no marks")
 
 # ── no cache ─────────────────────────────────────────────────────────
 calls.clear()

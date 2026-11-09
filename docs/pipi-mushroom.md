@@ -91,6 +91,10 @@ the user had just made on the site; details in
 - The backend normalises each row to `{id: str, bloomedMs: int, wiltingMs: int}`
   and drops a row without an identity. An unset or invalid wilting time
   becomes 0, which never counts as 拿過精華.
+- An answer with no `items` list is `pipi_unavailable`, a failed read, not
+  an empty list. Unlike an empty map from `items`, no marks would quietly
+  show every 拿過精華 flower without the 精華標記讀取失敗 line. An account
+  with no marks at all hasn't been measured; ticket 03 checks it.
 
 Cookies the site sets are all `HttpOnly; Secure; SameSite=Lax`:
 `pm_site_session`, `PikminVisitor`, `ASP.NET_SessionId` (a session cookie),

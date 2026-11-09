@@ -84,20 +84,20 @@ export function isCommonFlower(item: PipiItem): boolean {
 /**
  * Whether the 花的子篩選 lets the item through. A flower must pass all three
  * sub-filters, so a 拿過精華 彩帶花 stays hidden under 只顯示彩帶. Mushrooms
- * and smoke always pass, whatever `essence` says; the 點位種類 on/off
+ * and smoke always pass, whatever `essenceTaken` says; the 點位種類 on/off
  * switches are applied elsewhere, not here.
  *
  * @param item a 蘑菇地圖 item of any kind.
  * @param filter the 花的子篩選.
  * @param nowMs server-clock time in ms, as for {@link ribbonEndMs}.
- * @param essence the item's 拿過精華 answer from pipiEssence.ts' `essenceTaken`.
+ * @param essenceTaken the item's 拿過精華 answer from pipiEssence.ts' `essenceTaken`.
  *   With 顯示拿過精華的花 unticked, `unknown` hides the flower like `taken`:
  *   until the list is read, flowers wait instead of flashing up and vanishing.
  */
-export function passesFlowerFilter(item: PipiItem, filter: PipiFlowerFilter, nowMs: number, essence: PipiEssenceTaken): boolean {
+export function passesFlowerFilter(item: PipiItem, filter: PipiFlowerFilter, nowMs: number, essenceTaken: PipiEssenceTaken): boolean {
   if (item.itemKind !== 'flower') return true;
   if (filter.ribbonOnly && ribbonEndMs(item, nowMs) === null) return false;
   if (!filter.showCommon && isCommonFlower(item)) return false;
-  if (!filter.showEssenceTaken && essence !== 'notTaken') return false;
+  if (!filter.showEssenceTaken && essenceTaken !== 'notTaken') return false;
   return true;
 }

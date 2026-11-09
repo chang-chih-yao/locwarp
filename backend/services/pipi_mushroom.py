@@ -467,11 +467,17 @@ class PipiMushroomClient:
         Returns:
             ``[{id: str, bloomedMs: int, wiltingMs: int}]``; entries without
             an identity are dropped, an unset or invalid wilting time is 0.
+
+        Raises:
+            PipiError: from ``request``, or ``pipi_unavailable`` when the
+            answer has no ``items`` list.
         """
         j = await self.request(ESSENCE_ENDPOINT, {"action": "list"})
         rows = j.get("items")
         if not isinstance(rows, list):
-            return []
+            # Unlike items, where an empty map is plain to see, reading this
+            # as no marks would quietly show every 拿過精華 flower.
+            raise PipiError("pipi_unavailable", 502, "essence list: no items list")
         return [m for m in (_normalize_mark(x) for x in rows) if m]
 
     @staticmethod

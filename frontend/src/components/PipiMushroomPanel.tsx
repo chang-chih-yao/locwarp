@@ -34,6 +34,7 @@ const KIND_ORDER: PipiKind[] = ['mushroom', 'flower', 'smoke'];
 const FLOWER_FILTER_ORDER: { key: keyof PipiFlowerFilter; labelKey: string }[] = [
   { key: 'ribbonOnly', labelKey: 'map.pipi_flower_ribbon_only' },
   { key: 'showCommon', labelKey: 'map.pipi_flower_show_common' },
+  { key: 'showEssenceTaken', labelKey: 'map.pipi_flower_show_essence_taken' },
 ];
 const MARKER_SIZE_ORDER: PipiMarkerSize[] = ['small', 'medium', 'large'];
 const PANEL_ACCENT = '#ff9f43';

@@ -390,6 +390,7 @@ export const STRINGS = {
   'map.pipi_kind_smoke': { zh: '煙霧', en: 'Smoke' },
   'map.pipi_flower_ribbon_only': { zh: '只顯示彩帶', en: 'Ribbon flowers only' },
   'map.pipi_flower_show_common': { zh: '顯示普花', en: 'Show common flowers' },
+  'map.pipi_flower_show_essence_taken': { zh: '顯示拿過精華的花', en: 'Show flowers with essence taken' },
   'map.pipi_marker_size': { zh: '標記大小', en: 'Marker size' },
   'map.pipi_marker_size_small': { zh: '小', en: 'Small' },
   'map.pipi_marker_size_medium': { zh: '中', en: 'Medium' },

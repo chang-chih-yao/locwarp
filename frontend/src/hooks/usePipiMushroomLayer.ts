@@ -47,12 +47,18 @@ const ASSET_PREFIX = 'https://pipimushroom.com/';
 // 標記大小 → px, the source of truth: these reach styles.css as inline
 // --pipi-* custom properties (its fallbacks only cover a missing property),
 // so the Leaflet icon box and the CSS circle can't drift apart. The image
-// fills the circle inside the ring.
+// fills the circle inside the ring; the 拿過精華 ✓ is sized from the box
+// and the ring.
 const MARKER_PX: Record<PipiMarkerSize, { box: number; ring: number; dot: number }> = {
   small: { box: 30, ring: 2, dot: 10 },
   medium: { box: 40, ring: 3, dot: 13 },
   large: { box: 50, ring: 4, dot: 17 },
 };
+
+// Drawn as a path rather than the ✓ character, whose size and baseline vary
+// by font and come out off-centre at the small size.
+const ESSENCE_CHECKMARK_HTML = '<span class="pipi-essence-checkmark"><svg viewBox="0 0 12 12" aria-hidden="true">'
+  + '<path d="M2.6 6.3 4.9 8.6 9.4 3.6" /></svg></span>';
 
 export type PipiPhase = 'off' | 'no_cookie' | 'zoom' | 'region' | 'loading' | 'ok' | 'error';
 export interface PipiLayerStatus {
@@ -479,17 +485,24 @@ export function usePipiMushroomLayer({
       // reselect's reach.
       if (drawn.has(it.id)) return;
       const kind = kindOf(it);
-      // Decided when the marker is built (rebuild or reselect); prune never re-checks it.
+      // Both decided when the marker is built (rebuild or reselect); prune
+      // never re-checks them. A mark lasts until the flower wilts, which is
+      // also when prune drops it, so a ✓ never outlives its mark.
       const ribbon = ribbonEndMs(it, now) !== null;
+      // Only `taken` gets the ✓, never `unknown`: while the list is on its way
+      // the flower is drawn bare, and the list's answer rebuilds the layer.
+      const taken = essenceTaken(it, essenceMarks, now) === 'taken';
       const img = safeImage(it);
-      const iconKey = `${kind}|${ribbon ? 'ribbon' : ''}|${img ?? ''}`;
+      const iconKey = `${kind}|${ribbon ? 'ribbon' : ''}|${taken ? 'taken' : ''}|${img ?? ''}`;
       let icon = icons.get(iconKey);
       if (!icon) {
+        // The ✓ sits beside the circle, not in it (why: .pipi-essence-checkmark
+        // in styles.css), so the --pipi-* sizes go on the box around both.
         icon = L.divIcon({
           className: 'pipi-pin',
-          html: `<div class="pipi-pin-inner pipi-${kind}${ribbon ? ' pipi-ribbon' : ''}" style="${pxStyle}">${img
+          html: `<div class="pipi-pin-box" style="${pxStyle}"><div class="pipi-pin-inner pipi-${kind}${ribbon ? ' pipi-ribbon' : ''}">${img
             ? `<img src="${escapeHtml(img)}" alt="" draggable="false" />`
-            : '<span class="pipi-pin-dot"></span>'}</div>`,
+            : '<span class="pipi-pin-dot"></span>'}</div>${taken ? ESSENCE_CHECKMARK_HTML : ''}</div>`,
           iconSize: [px.box, px.box],
           iconAnchor: [half, half],
           popupAnchor: [0, 1 - half],

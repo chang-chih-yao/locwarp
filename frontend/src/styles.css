@@ -1440,7 +1440,14 @@ textarea:focus {
 }
 
 /* Sizes come from the hook's MARKER_PX (標記大小) as inline --pipi-* custom
-   properties; the fallbacks are the 小 size. */
+   properties on .pipi-pin-box, which holds the circle and the 拿過精華 ✓ side
+   by side; the fallbacks are the 小 size. */
+.pipi-pin-box {
+  position: relative;
+  width: var(--pipi-box, 30px);
+  height: var(--pipi-box, 30px);
+}
+
 .pipi-pin-inner {
   width: var(--pipi-box, 30px);
   height: var(--pipi-box, 30px);
@@ -1482,6 +1489,35 @@ textarea:focus {
   height: var(--pipi-dot, 10px);
   border-radius: 50%;
   background: #9aa3b2;
+}
+
+/* 拿過精華 ✓ on the box's top-right corner. A sibling of .pipi-pin-inner,
+   whose overflow: hidden would clip it; every length scales with 標記大小. */
+.pipi-essence-checkmark {
+  position: absolute;
+  top: calc(var(--pipi-box, 30px) * -0.06);
+  right: calc(var(--pipi-box, 30px) * -0.06);
+  width: calc(var(--pipi-box, 30px) * 0.46);
+  height: calc(var(--pipi-box, 30px) * 0.46);
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: calc(var(--pipi-ring, 2px) * 0.75) solid #fff;
+  background: #22b35e;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.pipi-essence-checkmark svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* The popup wrapper already draws the frame; drop .map-popup's own. */

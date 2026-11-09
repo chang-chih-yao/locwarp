@@ -2,13 +2,13 @@
 //   node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"
 //
 // Locks the 拿過精華 rules (GLOSSARY.md): the mark's identity, the 標記狀態
-// with its 還沒讀到 value, replacing it from the list, and whether a flower
-// counts as 拿過精華. Data follows the list and items formats measured on
+// with its 還沒讀到 value, replacing it from the list, updating it from a set
+// answer, and whether a flower counts as 拿過精華. Data follows the list and items formats measured on
 // 2026-11-09 (01 號票 Comments); tests that need data the site has not been
 // seen sending say which upstream format change they guard against.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ESSENCE_NOT_LOADED, essenceMarkId, essenceTaken, marksFromList } from '../../frontend/src/pipiEssence.ts';
+import { ESSENCE_NOT_LOADED, essenceMarkId, essenceTaken, marksFromList, marksFromSet } from '../../frontend/src/pipiEssence.ts';
 import type { PipiEssenceMark, PipiItem } from '../../frontend/src/services/api.ts';
 
 const HOUR = 3_600_000;
@@ -133,4 +133,56 @@ test('用清單建立狀態不改動舊的狀態物件', () => {
   const before = marksFromList([REAL_MARK], ESSENCE_NOT_LOADED);
   marksFromList([], before);
   assert.equal(essenceTaken(REAL_FLOWER, before, NOW), 'taken');
+});
+
+// ── 設定回覆 (PUT /api/pipi/essence answers {wiltingMs}) ─────────────────
+
+test('標記時用設定回覆的失效時間，不是那朵花的枯萎時間', () => {
+  const before = marksFromList([], ESSENCE_NOT_LOADED);
+  const replyWilt = REAL_WILT - 2 * HOUR;
+  const after = marksFromSet(before, REAL_FLOWER, true, replyWilt);
+  assert.equal(essenceTaken(REAL_FLOWER, after, replyWilt - 1), 'taken');
+  assert.equal(essenceTaken(REAL_FLOWER, after, replyWilt), 'notTaken');
+});
+
+test('原站的設定回覆沒有失效時間（後端填 0）時，改用那朵花的 wiltingMs，跟原站一樣', () => {
+  const after = marksFromSet(marksFromList([], ESSENCE_NOT_LOADED), REAL_FLOWER, true, 0);
+  assert.equal(essenceTaken(REAL_FLOWER, after, REAL_WILT - 1), 'taken');
+  assert.equal(essenceTaken(REAL_FLOWER, after, REAL_WILT), 'notTaken');
+});
+
+test('取消時刪掉這朵花的識別，其他標記留著', () => {
+  const otherMark: PipiEssenceMark = { id: OTHER_FLOWER.id, bloomedMs: OTHER_FLOWER.bloomedMs!, wiltingMs: OTHER_FLOWER.wiltingMs! };
+  const before = marksFromList([REAL_MARK, otherMark], ESSENCE_NOT_LOADED);
+  const after = marksFromSet(before, REAL_FLOWER, false, 0);
+  assert.equal(essenceTaken(REAL_FLOWER, after, NOW), 'notTaken');
+  assert.equal(essenceTaken(OTHER_FLOWER, after, NOW), 'taken');
+});
+
+// The layer rebuilds from the new state; the old one may still be drawn.
+test('用設定回覆更新狀態不改動舊的狀態物件，標記和取消都是', () => {
+  const before = marksFromList([REAL_MARK], ESSENCE_NOT_LOADED);
+  marksFromSet(before, OTHER_FLOWER, true, OTHER_FLOWER.wiltingMs!);
+  marksFromSet(before, REAL_FLOWER, false, 0);
+  assert.equal(essenceTaken(REAL_FLOWER, before, NOW), 'taken');
+  assert.equal(essenceTaken(OTHER_FLOWER, before, NOW), 'notTaken');
+});
+
+// A mark can be set while the layer is off (自動標記). Turning one reply into
+// a loaded state would read as "only this flower is marked" when the layer
+// opens, and every other 拿過精華 flower would flash up.
+test('套在還沒讀到的狀態上，結果仍然是還沒讀到', () => {
+  assert.equal(marksFromSet(ESSENCE_NOT_LOADED, REAL_FLOWER, true, REAL_WILT), ESSENCE_NOT_LOADED);
+  assert.equal(marksFromSet(ESSENCE_NOT_LOADED, REAL_FLOWER, false, 0), ESSENCE_NOT_LOADED);
+});
+
+test('數字 id 的花標記之後，清單裡同值的字串 id 也算同一朵', () => {
+  const numericId = { ...REAL_FLOWER, id: 123456 as unknown as string };
+  const after = marksFromSet(marksFromList([], ESSENCE_NOT_LOADED), numericId, true, REAL_WILT);
+  assert.equal(essenceTaken({ ...REAL_FLOWER, id: '123456' }, after, NOW), 'taken');
+});
+
+test('沒有識別的點位（盛開時間是 0）設定回覆不改變狀態', () => {
+  const before = marksFromList([REAL_MARK], ESSENCE_NOT_LOADED);
+  assert.equal(marksFromSet(before, { ...REAL_FLOWER, bloomedMs: 0 }, true, REAL_WILT), before);
 });

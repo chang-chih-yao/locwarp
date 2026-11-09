@@ -6,13 +6,14 @@ import {
   pipiEssenceMarks,
   pipiItems,
   pipiSetCookie,
+  pipiSetEssence,
   pipiStatus,
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
-import { ESSENCE_NOT_LOADED, essenceTaken, marksFromList } from '../pipiEssence';
+import { ESSENCE_NOT_LOADED, essenceMarkId, essenceTaken, marksFromList, marksFromSet } from '../pipiEssence';
 import type { PipiEssenceMarks } from '../pipiEssence';
-import { canCollectFruit, fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
+import { canCollectFruit, canMarkEssence, fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 import { PIPI_FRESH_MS, createPipiFetchPlanner } from '../pipiFetchPlanner';
 import type { PipiBox } from '../pipiFetchPlanner';
 import { PIPI_MAX_MARKERS, selectPipiMarkers } from '../pipiMarkerSelection';
@@ -78,6 +79,12 @@ export interface PipiLayerStatus {
 }
 export type PipiKinds = Record<PipiKind, boolean>;
 
+/**
+ * What the shared 拿過精華 mark action did. `saving`: the same flower was
+ * still being saved, so nothing was sent.
+ */
+export type PipiEssenceSetResult = { kind: 'ok' } | { kind: 'failed'; error: string } | { kind: 'saving' };
+
 type TFn = (key: any, vars?: Record<string, string | number>) => string;
 
 interface Options {
@@ -86,12 +93,21 @@ interface Options {
   kinds: PipiKinds;
   flowerFilter: PipiFlowerFilter;
   markerSize: PipiMarkerSize;
-  onTeleport: (lat: number, lng: number) => void;
-  onNavigate: (lat: number, lng: number) => void;
-  /** 撈水果 (GLOSSARY.md), offered only by a flower that is not a 花苞 and has not wilted. */
-  onCollectFruit: (lat: number, lng: number) => void;
+  // Popup actions get the whole item; the popup is closed before each is called.
+  onTeleport: (item: PipiItem) => void;
+  onNavigate: (item: PipiItem) => void;
+  /** 撈水果 (GLOSSARY.md), offered only by 彩帶花. */
+  onCollectFruit: (item: PipiItem) => void;
+  /** The app's single toast; a new one replaces the last. */
+  showToast: (msg: string) => void;
   t: TFn;
 }
+
+// Leaflet fixes a popup's max width when the marker is built, before the
+// popup knows whether it has two buttons side by side; this only matters to
+// those, since every other flower popup is narrower than the old 280.
+const POPUP_MAX_WIDTH = 280;
+const FLOWER_POPUP_MAX_WIDTH = 400;
 
 function escapeHtml(s: string): string {
   return s
@@ -140,7 +156,22 @@ function itemName(it: PipiItem): string {
   return it.sizeName && it.itemKind !== 'flower' ? `${name} · ${it.sizeName}` : name;
 }
 
-function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string {
+// The 撈水果 / 拿過精華 row: 撈水果 on the left, the two equal; one alone fills
+// the row, and with neither there is no row.
+function flowerActionsHtml(fruit: boolean, essence: { taken: boolean; saving: boolean } | null, t: TFn): string {
+  if (!fruit && !essence) return '';
+  const fruitBtn = fruit
+    ? `<button type="button" class="btn btn-secondary" style="padding:5px 10px;" data-pipi-act="fruit">${escapeHtml(t('map.pipi_fruit'))}</button>`
+    : '';
+  // data-pipi-essence is what a press sends, fixed with the label when the popup opens.
+  const essenceBtn = essence
+    ? `<button type="button" class="btn btn-secondary" style="padding:5px 10px;" data-pipi-act="essence" data-pipi-essence="${essence.taken ? 'unmark' : 'mark'}"${essence.saving ? ' disabled' : ''}>${
+      escapeHtml(t(essence.taken ? 'map.pipi_essence_unmark' : 'map.pipi_essence_mark'))}</button>`
+    : '';
+  return `<div class="map-popup-actions pipi-popup-flower-row${fruitBtn && essenceBtn ? ' pipi-popup-flower-row-pair' : ''}">${fruitBtn}${essenceBtn}</div>`;
+}
+
+function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn, marks: PipiEssenceMarks, saving: ReadonlySet<string>): string {
   const img = safeImage(it);
   const end = endMs(it, kind);
   const now = Date.now() + offset;
@@ -150,6 +181,12 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
   const ribbonLine = ribbonEnd === null ? '' : t('map.pipi_ribbon_ends_in', { time: fmtRibbonCountdown(ribbonEnd - now) });
   // Same open-time 彩帶花 check as the ribbon line above.
   const fruit = canCollectFruit(it, now);
+  // Also at open time, like the time lines. 還不知道 reads as not taken. A
+  // flower still saving is drawn disabled, also when a rebuild reopens it.
+  const markId = essenceMarkId(it.id, it.bloomedMs);
+  const essence = canMarkEssence(it, now)
+    ? { taken: essenceTaken(it, marks, now) === 'taken', saving: markId !== null && saving.has(markId) }
+    : null;
   let timeLine = '';
   if (end && end > now) {
     timeLine = t('map.pipi_remaining', { time: fmtDuration(end - now) });
@@ -171,14 +208,12 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn): string
       <button type="button" class="btn btn-primary" style="padding:5px 10px;" data-pipi-act="teleport">${escapeHtml(t('map.teleport_here'))}</button>
       <button type="button" class="btn btn-secondary" style="padding:5px 10px;" data-pipi-act="navigate">${escapeHtml(t('map.navigate_here'))}</button>
     </div>
-    ${fruit ? `<div class="map-popup-actions pipi-popup-fruit-row">
-      <button type="button" class="btn btn-secondary" style="padding:5px 10px;" data-pipi-act="fruit">${escapeHtml(t('map.pipi_fruit'))}</button>
-    </div>` : ''}
+    ${flowerActionsHtml(fruit, essence, t)}
   </div>`;
 }
 
 export function usePipiMushroomLayer({
-  mapRef, enabled, kinds, flowerFilter, markerSize, onTeleport, onNavigate, onCollectFruit, t,
+  mapRef, enabled, kinds, flowerFilter, markerSize, onTeleport, onNavigate, onCollectFruit, showToast, t,
 }: Options) {
   // null = unknown (backend not reachable yet); we still try to load.
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -205,13 +240,86 @@ export function usePipiMushroomLayer({
 
   const tRef = useRef(t);
   tRef.current = t;
-  // Popup buttons by data-pipi-act. Every act needs its own entry: an
-  // unmapped one does nothing (and logs) instead of falling back to a teleport.
-  const popupActionsRef = useRef<Record<string, (lat: number, lng: number) => void>>({});
-  popupActionsRef.current = { teleport: onTeleport, navigate: onNavigate, fruit: onCollectFruit };
-  // Id of the item whose popup is open, so a data refresh can reopen it.
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+  // Read when a save finishes, not when it was pressed.
+  const showEssenceTakenRef = useRef(flowerFilter.showEssenceTaken);
+  showEssenceTakenRef.current = flowerFilter.showEssenceTaken;
+  // Id of the item whose popup is open, so a data refresh can reopen it, and
+  // that popup's element.
   const openIdRef = useRef<string | null>(null);
+  const openPopupElRef = useRef<HTMLElement | null>(null);
   const reopenIdRef = useRef<string | null>(null);
+
+  // Mark identities being saved. A ref, not state: state would rebuild the
+  // whole layer on entering and leaving it. Disabling the button alone can't
+  // stop a second send: a rebuild mid-save (60 s refresh, list answer)
+  // reopens the popup with a fresh button.
+  const savingRef = useRef<Set<string>>(new Set());
+  /**
+   * The 拿過精華 mark action the popup button and 自動標記 share; it works
+   * with the layer off. It sends, keeps savingRef, applies the answer to the
+   * 標記狀態 and reports. Closing popups and toasts are left to the caller:
+   * closing here would shut whatever popup the user has open when 自動標記
+   * lands, and two toasts would replace each other.
+   *
+   * @param item the flower, as the caller got it; callers check
+   *   canMarkEssence first.
+   * @param collected true marks, false cancels.
+   * @returns `ok`; `failed` with the error text (the 標記狀態 is left as it
+   *   was); or `saving` when the same flower is still being saved, and then
+   *   nothing is sent.
+   */
+  const markEssence = useCallback(async (item: PipiItem, collected: boolean): Promise<PipiEssenceSetResult> => {
+    const key = essenceMarkId(item.id, item.bloomedMs);
+    // Unreachable past canMarkEssence, which implies an identity.
+    if (key === null) return { kind: 'failed', error: `no mark identity for ${String(item.id)}` };
+    if (savingRef.current.has(key)) return { kind: 'saving' };
+    savingRef.current.add(key);
+    try {
+      const r = await pipiSetEssence({ id: item.id, bloomedMs: item.bloomedMs as number, collected });
+      // Applied locally like the site does; the list isn't read again.
+      setEssenceMarks((prev) => marksFromSet(prev, item, collected, r.wiltingMs));
+      return { kind: 'ok' };
+    } catch (e) {
+      return { kind: 'failed', error: (e as Error).message || String(e) };
+    } finally {
+      savingRef.current.delete(key);
+    }
+  }, []);
+
+  // The popup's 我拿過精華了 / 已拿過精華（取消）. It leaves the popup open
+  // while saving; a success rebuilds the layer, which reopens it (ticked) from
+  // the new 標記狀態.
+  const markFromPopup = useCallback(async (it: PipiItem, btn: HTMLButtonElement) => {
+    const collected = btn.dataset.pipiEssence === 'mark';
+    btn.disabled = true;
+    const r = await markEssence(it, collected);
+    // Only reachable past the disabled button, so no toast for it.
+    if (r.kind === 'saving') return;
+    const showsHere = openIdRef.current === it.id;
+    if (r.kind === 'ok') {
+      // Meanwhile the user may have opened another flower's or a bookmark's popup.
+      if (!showEssenceTakenRef.current && showsHere) mapRef.current?.closePopup();
+      showToastRef.current(tRef.current(collected ? 'map.pipi_essence_marked' : 'map.pipi_essence_unmarked'));
+      return;
+    }
+    showToastRef.current(tRef.current(collected ? 'map.pipi_essence_mark_failed' : 'map.pipi_essence_unmark_failed', { error: r.error }));
+    // The popup may have been reopened on a new marker during the save.
+    const openBtn = showsHere ? openPopupElRef.current?.querySelector<HTMLButtonElement>('[data-pipi-act="essence"]') : null;
+    if (openBtn) openBtn.disabled = false;
+  }, [markEssence, mapRef]);
+
+  // Popup buttons by data-pipi-act; each decides whether to close the popup.
+  // Every act needs its own entry: an unmapped one does nothing (and logs)
+  // instead of falling back to a teleport.
+  const popupActionsRef = useRef<Record<string, (it: PipiItem, btn: HTMLButtonElement) => void>>({});
+  popupActionsRef.current = {
+    teleport: (it) => { mapRef.current?.closePopup(); onTeleport(it); },
+    navigate: (it) => { mapRef.current?.closePopup(); onNavigate(it); },
+    fruit: (it) => { mapRef.current?.closePopup(); onCollectFruit(it); },
+    essence: (it, btn) => { void markFromPopup(it, btn); },
+  };
   // Re-picks the drawn markers for the current view, set by the marker
   // effect and null whenever no layer is up; the fetch loop calls it.
   const reselectRef = useRef<(() => void) | null>(null);
@@ -516,10 +624,15 @@ export function usePipiMushroomLayer({
       // Drawn on the visible world copy; teleport / navigate keep it.lng.
       const marker = L.marker([it.lat, it.lng + lngShift], { icon, keyboard: false, riseOnHover: true });
       marker.bindTooltip(escapeHtml(itemName(it)), { direction: 'top' });
-      marker.bindPopup(() => popupHtml(it, kind, offset, tRef.current), { maxWidth: 280, minWidth: 200 });
+      // essenceMarks is this build's, which is current: a change rebuilds.
+      marker.bindPopup(() => popupHtml(it, kind, offset, tRef.current, essenceMarks, savingRef.current), {
+        maxWidth: kind === 'flower' ? FLOWER_POPUP_MAX_WIDTH : POPUP_MAX_WIDTH, minWidth: 200,
+      });
       marker.on('popupopen', (e: L.PopupEvent) => {
         openIdRef.current = it.id;
-        e.popup.getElement()?.querySelectorAll<HTMLButtonElement>('[data-pipi-act]').forEach((btn) => {
+        const el = e.popup.getElement() ?? null;
+        openPopupElRef.current = el;
+        el?.querySelectorAll<HTMLButtonElement>('[data-pipi-act]').forEach((btn) => {
           btn.onclick = (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
@@ -529,12 +642,15 @@ export function usePipiMushroomLayer({
               console.error(`[pipi] popup button with no handler: data-pipi-act="${act}"`);
               return;
             }
-            map.closePopup();
-            actions[act](it.lat, it.lng);
+            actions[act](it, btn);
           };
         });
       });
-      marker.on('popupclose', () => { if (openIdRef.current === it.id) openIdRef.current = null; });
+      marker.on('popupclose', () => {
+        if (openIdRef.current !== it.id) return;
+        openIdRef.current = null;
+        openPopupElRef.current = null;
+      });
       layer.addLayer(marker);
       drawn.set(it.id, { marker, end: endMs(it, kind) });
     };

@@ -1,13 +1,13 @@
 // Run from the repo root:
 //   node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "tests/frontend/*.ts"
 //
-// Locks how 蘑菇地圖 flowers are classified and filtered (GLOSSARY.md: 花種,
-// 花苞, 普花, 彩帶花, 撈水果). Data follows the item format sampled from the items API
+// Locks how 蘑菇地圖 flowers are classified and filtered, and which offer
+// 撈水果 and 我拿過精華了 (GLOSSARY.md: 花種, 花苞, 普花, 彩帶花, 撈水果, 拿過精華). Data follows the item format sampled from the items API
 // on 2026-11-05; tests that need data the site has not been seen sending say
 // which upstream format change they guard against.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canCollectFruit, fmtRibbonCountdown, isCommonFlower, passesFlowerFilter, ribbonEndMs } from '../../frontend/src/pipiFlowers.ts';
+import { canCollectFruit, canMarkEssence, fmtRibbonCountdown, isCommonFlower, passesFlowerFilter, ribbonEndMs } from '../../frontend/src/pipiFlowers.ts';
 import type { PipiFlowerFilter } from '../../frontend/src/defaults.ts';
 import type { PipiEssenceTaken } from '../../frontend/src/pipiEssence.ts';
 import type { PipiItem } from '../../frontend/src/services/api.ts';
@@ -277,4 +277,77 @@ test('原站若讓盛開的花沒有枯萎時間（0、沒給、字串），照�
   for (const wiltingMs of [0, undefined, String(f.wiltingMs) as unknown as number]) {
     assert.equal(canCollectFruit({ ...f, wiltingMs }, NOW), false, String(wiltingMs));
   }
+});
+
+// 能不能標記拿過精華 (Q4): the popup offers 我拿過精華了 on a bloomed flower
+// that has not wilted, with an identity PUT /api/pipi/essence accepts.
+test('盛開時間剛好等於現在就可以標記拿過精華，還沒到盛開時間不行', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵', NOW);
+  assert.equal(canMarkEssence(f, NOW), true);
+  assert.equal(canMarkEssence(f, NOW - 1), false);
+});
+
+test('剛好到枯萎時間就不能標記拿過精華，前一毫秒還可以', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵');
+  assert.equal(canMarkEssence(f, f.wiltingMs! - 1), true);
+  assert.equal(canMarkEssence(f, f.wiltingMs!), false);
+});
+
+// The difference from 撈水果, which is for 彩帶花 only: 精華 can be taken all
+// through the bloom, 水果 only during the 彩帶期.
+test('盛開 61 分鐘、彩帶期過了的花可以標記拿過精華，但不能撈水果', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵', NOW - 61 * MIN);
+  assert.equal(canMarkEssence(f, NOW), true);
+  assert.equal(canCollectFruit(f, NOW), false);
+});
+
+// Not seen in the sample. 撈水果 refuses these too (its 彩帶花 rule needs a
+// wilting time), so this locks 標記's own rule, not a difference between them.
+test('原站若讓盛開的花沒有枯萎時間（0、沒給、字串、Infinity），不能標記拿過精華', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵');
+  for (const wiltingMs of [0, undefined, String(f.wiltingMs) as unknown as number, Infinity]) {
+    assert.equal(canMarkEssence({ ...f, wiltingMs }, NOW), false, String(wiltingMs));
+  }
+});
+
+// Measured items have integer bloom times; PUT only takes a positive integer,
+// so the button never shows on a flower whose mark would be refused (422).
+test('原站若讓盛開時間帶小數，或是 0、負數、字串、沒給：不能標記拿過精華（PUT 只收正整數）', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵');
+  for (const bloomedMs of [f.bloomedMs! + 0.5, 0, -5, String(f.bloomedMs) as unknown as number, undefined]) {
+    assert.equal(canMarkEssence({ ...f, bloomedMs }, NOW), false, String(bloomedMs));
+  }
+});
+
+test('花苞的三個階段（含 Pre-Flower 等寫法）都不能標記拿過精華', () => {
+  for (const state of BUD_STATES) {
+    assert.equal(canMarkEssence(bud('f:White:Geranium', '白色天竺葵', state), NOW), false, `${state} 時間為 0`);
+    assert.equal(canMarkEssence(timedBud(state), NOW), false, `${state} 帶盛開時間`);
+  }
+});
+
+test('沒有 id（空字串、只有空白、沒給）的花不能標記拿過精華', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵');
+  for (const id of ['', '   ', undefined as unknown as string]) {
+    assert.equal(canMarkEssence({ ...f, id }, NOW), false, JSON.stringify(id));
+  }
+});
+
+// The backend forwards the site's id untyped and PUT takes a strict string
+// or integer, so a number id must be an integer.
+// PUT's integer range is what a browser's JSON number carries exactly.
+test('原站若把 id 改成數字：安全範圍內的整數 id 可以標記拿過精華，有小數或超出安全範圍的不行', () => {
+  const f = flower('f:White:Geranium', '白色天竺葵');
+  for (const id of [123456, 2 ** 53 - 1, -(2 ** 53 - 1)]) {
+    assert.equal(canMarkEssence({ ...f, id: id as unknown as string }, NOW), true, String(id));
+  }
+  for (const id of [7.5, 2 ** 53, -(2 ** 53)]) {
+    assert.equal(canMarkEssence({ ...f, id: id as unknown as string }, NOW), false, String(id));
+  }
+});
+
+test('蘑菇與煙霧不能標記拿過精華，就算原站讓它們帶著盛開中的時間', () => {
+  const times = { bloomedMs: NOW - 5 * HOUR, wiltingMs: NOW + 18 * HOUR };
+  assert.equal(canMarkEssence({ ...MIXED.蘑菇, ...times }, NOW), false);
+  assert.equal(canMarkEssence({ ...MIXED.煙霧, ...times }, NOW), false);
 });

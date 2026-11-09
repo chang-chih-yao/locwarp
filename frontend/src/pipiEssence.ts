@@ -1,5 +1,6 @@
 // 蘑菇地圖 拿過精華 rules (GLOSSARY.md): the identity of a mark, the
-// 標記狀態, and whether a flower counts as 拿過精華. The site's list
+// 標記狀態 and updating it from a list or a set answer, and whether a flower
+// counts as 拿過精華. The site's list
 // (`FlowerEssenceData.ashx`, read through GET /api/pipi/essence) is the only
 // source of marks; a site format change is fixed here.
 //
@@ -55,6 +56,32 @@ export function marksFromList(list: readonly PipiEssenceMark[], prev: PipiEssenc
     if (key) next.set(key, m.wiltingMs);
   }
   if (prev && prev.size === next.size && [...next].every(([k, v]) => prev.get(k) === v)) return prev;
+  return next;
+}
+
+/**
+ * 標記狀態 after a set answer, applied locally the way the site's page does:
+ * neither side reads the list again after a set.
+ *
+ * @param prev the current 標記狀態.
+ * @param item the flower that was marked or cancelled.
+ * @param collected true for a mark, false for a cancel.
+ * @param wiltingMs the answer's `wiltingMs`; 0 (unset) falls back to the
+ *   flower's own `wiltingMs`, like the site.
+ * @returns a new state; `prev` itself when it is 還沒讀到 (one answer must not
+ *   pass for a read list) or the flower has no identity. `prev` is never changed.
+ */
+export function marksFromSet(
+  prev: PipiEssenceMarks,
+  item: Pick<PipiItem, 'id' | 'bloomedMs' | 'wiltingMs'>,
+  collected: boolean,
+  wiltingMs: number,
+): PipiEssenceMarks {
+  const key = essenceMarkId(item.id, item.bloomedMs);
+  if (prev === null || key === null) return prev;
+  const next = new Map(prev);
+  if (collected) next.set(key, wiltingMs > 0 ? wiltingMs : (item.wiltingMs ?? 0));
+  else next.delete(key);
   return next;
 }
 

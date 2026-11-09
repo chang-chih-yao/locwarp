@@ -2,7 +2,8 @@
 
 Map overlay showing the mushrooms, flowers and smoke points that
 [pipimushroom.com](https://pipimushroom.com/mfmap.aspx) (蘑菇地圖 tab) marks,
-with teleport / navigate buttons in each popup, plus 撈水果 on 彩帶花.
+with teleport / navigate buttons in each popup, plus 撈水果 on 彩帶花 and
+我拿過精華了 on bloomed flowers.
 The data needs the user's own
 Google login on that site, so LocWarp proxies it with the user's browser
 cookie. A Chrome extension keeps that cookie in sync.
@@ -14,14 +15,14 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 
 | Part | File | Role |
 | --- | --- | --- |
-| Protocol client | `backend/services/pipi_mushroom.py` | API session, AES/HMAC envelope, throttle, cache, Set-Cookie renewal, item normalisation, `essence_marks` (the 標記清單, normalised, never cached) |
-| API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items`, `GET /api/pipi/essence` (`{marks: [{id, bloomedMs, wiltingMs}]}`) |
+| Protocol client | `backend/services/pipi_mushroom.py` | API session, AES/HMAC envelope, throttle, cache, Set-Cookie renewal, item normalisation, `essence_marks` (the 標記清單, normalised, never cached), `set_essence_mark` (mark or cancel one, never cached) |
+| API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items`, `GET /api/pipi/essence` (`{marks: [{id, bloomedMs, wiltingMs}]}`), `PUT /api/pipi/essence` (`{id, bloomedMs, collected}` → `{wiltingMs}`, strict body) |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
-| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties on the icon's `.pipi-pin-box` |
+| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling, the shared 拿過精華 mark action; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties on the icon's `.pipi-pin-box` |
 | Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). `shouldReadEssence` / `recordEssenceRead`: whether this fetch loop still has to read the 標記清單. The layer only acts on its decisions |
 | Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
-| Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 |
-| 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `essenceTaken`, `ESSENCE_NOT_LOADED`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, and whether a point is 拿過精華 at a server time. The layer passes the answer to `passesFlowerFilter` |
+| Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`, `canMarkEssence`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 and 我拿過精華了 |
+| 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `marksFromSet`, `essenceTaken`, `ESSENCE_NOT_LOADED`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, updating it from a set answer, and whether a point is 拿過精華 at a server time. The layer passes the answer to `passesFlowerFilter` |
 | 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `App.tsx` `handleCollectFruit` supplies the single-device or group calls |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花, 顯示拿過精華的花, which shows 拿過精華 flowers with a ✓; disabled while 花 is off, ticks kept), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status, and a 精華標記讀取失敗 line while the last 標記清單 read failed |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
@@ -46,7 +47,9 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
    TW / HK / MA (Malaysia), using the same boxes as the site (`region_for`).
 5. `Handlers/FlowerEssenceData.ashx` holds the account's 拿過精華 marks
    (GLOSSARY.md). `{action: "list"}` returns them all, any region (see
-   "The 標記清單" below). Same envelope, needs login.
+   "The 標記清單" below). `{action: "set", mapObjectId, bloomedTimeMs,
+   collected}` marks one bloom (`collected: false` cancels it). Same
+   envelope, needs login.
 6. `Handlers/MapData.ashx {mode: "allcategories"}` is public. The live smoke
    test uses it to prove the envelope still works.
 7. Anti-debugging: `api-security.min.js` runs a `debugger` loop, so DevTools
@@ -94,7 +97,21 @@ the user had just made on the site; details in
 - An answer with no `items` list is `pipi_unavailable`, a failed read, not
   an empty list. Unlike an empty map from `items`, no marks would quietly
   show every 拿過精華 flower without the 精華標記讀取失敗 line. An account
-  with no marks at all hasn't been measured; ticket 03 checks it.
+  with no marks at all hasn't been measured yet (ticket 03's account still
+  held another mark); one list read once it is empty settles it.
+
+Setting a mark (measured 2026-11-10 through the local backend, one mark and
+one cancel on a bloomed flower; details in
+`.scratch/pipi-flower-essence/issues/03-manual-mark.md`):
+
+- `mapObjectId` and `bloomedTimeMs` go out as items gave them, with their
+  own types, like the site's page sends them.
+- A mark answers `mark.wiltingTimeMs` with the flower's wilting time. A cancel
+  answers `{ok: true, mark: {mapObjectId, bloomedTimeMs, wiltingTimeMs: 0,
+  collected: false}}`.
+- After a cancel the row is gone from the list; it doesn't stay with
+  `collected: false`. So every row in the list is still a mark.
+- The backend returns `{wiltingMs}` from `mark.wiltingTimeMs`, 0 when unset.
 
 Cookies the site sets are all `HttpOnly; Secure; SameSite=Lax`:
 `pm_site_session`, `PikminVisitor`, `ASP.NET_SessionId` (a session cookie),
@@ -219,8 +236,8 @@ and had not wilted. Back then no one knew 水果 needed the 彩帶期, and an un
 `wiltingMs` counted as not wilted. Now such a flower is not 彩帶花 and gets
 no button. A 彩帶期 that ends while the popup is open keeps the button, and
 pressing it still runs, like the other open-time checks. Mushrooms and smoke never get
-the button. It sits on its own full-width row under the teleport / navigate
-pair.
+the button. It sits on the row under the teleport / navigate pair, left of
+我拿過精華了, the two equal (see 拿過精華 below).
 
 **The flow** (`runFruitApproach`):
 
@@ -257,6 +274,76 @@ pair.
 
 It is a one-off action, separate from the 花農專用模式 (`SimMode.Flower`),
 and uses none of its radius, lap or wait settings.
+
+## 拿過精華: marking from the popup (2026-11-10)
+
+Terms follow `GLOSSARY.md` (拿過精華, 標記清單, 標記狀態, 還不知道). Decisions
+and their Q numbers: `.scratch/pipi-flower-essence/spec.md`.
+
+**When it shows** (`canMarkEssence`, Q4): a flower, not a 花苞, with an id,
+a `bloomedMs` that is a positive integer and a set `wiltingMs`, with
+`bloomedMs ≤ now < wiltingMs` at server time when the popup opens. Unlike
+撈水果 it holds for the whole bloom, past the 彩帶期. The id and the bloom
+time are what `PUT /api/pipi/essence` accepts (a non-blank string or a safe
+integer; a positive integer), so the button doesn't show on a flower whose
+mark would be refused. The PUT also caps a string id at 128 characters,
+which the button doesn't check (measured ids are 35).
+
+**The button row.** 撈水果 on the left, 我拿過精華了 on the right, equal
+widths; one alone fills the row, neither leaves no row. Since 撈水果 is for
+彩帶花 only, the pair only shows on a 彩帶花. The label is decided when the
+popup opens: 已拿過精華（取消） when the flower is 拿過精華, otherwise (還不知道
+included) 我拿過精華了. Leaflet sizes a popup by its min-content width,
+where two `1fr` columns don't even out, so the pair row is sized
+`max-content` (two copies of the wider button). Flower markers allow popups
+up to 400 px; the others keep 280. Measured 2026-11-10 in a zoom-17 view
+(151 flowers, both languages): beside 撈水果, 已拿過精華（取消） needs 293 px
+and Essence taken (undo) 311 px; every popup without the pair stayed below
+280 and came out the same width with either limit.
+
+**Popup actions** get the whole item and decide for themselves whether to
+close the popup: teleport, navigate and 撈水果 close it first; the mark button
+doesn't.
+
+**The mark action** (to be shared with ticket 04's 自動標記; it works with the
+layer off). It sends the PUT, keeps the 存檔中 list, applies the answer
+(`marksFromSet`) and reports `ok`, `failed` (with the error) or `saving`. It
+never closes a popup or shows a toast, so a 自動標記 can't close whatever
+popup the user has open, and two toasts can't replace each other.
+
+- The answer is applied locally, as the site's page does; the list isn't
+  read again. A 0 `wiltingMs` falls back to the flower's own. Applied to a
+  還沒讀到 state it stays 還沒讀到, so one answer can't pass for a read list.
+- **存檔中.** The identities being saved sit in a ref, not React state (state
+  would rebuild the layer on entering and leaving it). A second call for the
+  same flower meanwhile sends nothing and reports `saving`. Disabling the
+  button alone can't stop it: a rebuild mid-save (60 s refresh, a list
+  answer) reopens the popup with a fresh button. Every popup open draws a
+  flower that is still saving with its button disabled.
+- **Popup close and reopen is accepted.** The 標記狀態 is a dependency of the
+  marker effect, so a successful mark rebuilds the layer, which closes the
+  open popup and reopens it from the new 標記狀態 (label and ✓), as a 60 s
+  refresh does. There is no in-place update.
+
+**The popup button** calls it and owns the popup and the toast:
+
+- Pressing disables the button at once and leaves the popup open.
+- On success, with 顯示拿過精華的花 unticked, it closes the popup only if it
+  is still this flower's (the user may have opened another flower's or a
+  bookmark's meanwhile); the flower disappears. Ticked, the popup stays, as
+  on the site. The toast says 已標記為拿過精華 / 已取消拿過精華標記.
+- On failure the toast says 標記拿過精華失敗：{error} /
+  取消拿過精華標記失敗：{error}, and the open popup's button (if it is this
+  flower's) works again. No retry, and a login error doesn't stop the fetch
+  loop; the next fetch finds it.
+- `saving` can only come past a disabled button, so it shows nothing.
+- Accepted edge: ticked, a success while the list is 還沒讀到 leaves the
+  state as it was, so nothing rebuilds and the button stays disabled until
+  the list arrives (the 1–2 s after the layer opens).
+
+**Deliberately unlike the site:** LocWarp hides 拿過精華 flowers unless
+顯示拿過精華的花 is ticked (the site shows them with a ✓), and it judges a
+mark's expiry by server time (the site uses the local clock).
 
 ## Throttling (deliberate; tighten only, never loosen)
 
@@ -309,12 +396,15 @@ and uses none of its radius, lap or wait settings.
       items. The backend's back-off outlives the loop, so without this a
       重新整理 during it would leave the whole loop unread. Any other failure
       counts as read, and the next loop retries.
+  - A 拿過精華 set (`PUT /api/pipi/essence`) goes out once per press of the
+    popup button, never retried, and a second one for a flower still being
+    saved isn't sent. A mark doesn't read the list again.
 - **Backend:**
   - One upstream call at a time, at least 1 s apart.
   - 30 s cache per viewport. A hit adds the entry's age to `now_ms`, so it still reads as the server time at response.
-  - The 標記清單 is never cached and goes through the same queue, spacing and
-    `Retry-After` as items. The back-off is client-wide, so a list request
-    during it is answered 429 without reaching the site.
+  - The 標記清單 and the 拿過精華 set are never cached and go through the same
+    queue, spacing and `Retry-After` as items. The back-off is client-wide, so
+    a list or set request during it is answered 429 without reaching the site.
   - `Retry-After` honoured (5–900 s).
   - No `items` call below zoom 15 or outside TW/HK/MA. The frontend's
     `PIPI_MIN_ZOOM` is a separate copy of 15 and requests nothing below it either.

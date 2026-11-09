@@ -1,16 +1,19 @@
 """PipiMushroomClient.essence_marks() reads the account's 拿過精華 marks
-(GLOSSARY.md) from the site's FlowerEssenceData endpoint. No network:
-`request` is faked and records every call, like test_items_min_zoom.py.
+(GLOSSARY.md) from the site's FlowerEssenceData endpoint, and
+set_essence_mark() marks or cancels one. No network: `request` is faked and
+records every call, like test_items_min_zoom.py.
 
 What this locks:
 - the endpoint and the exact `{action: "list"}` payload, the site's own call;
 - normalisation into `{id: str, bloomedMs: int, wiltingMs: int}`, so the
   frontend's identity rule sees one shape whatever type the site sends;
 - an answer with no `items` list is pipi_unavailable, not an empty list;
+- the set payload `{action: "set", mapObjectId, bloomedTimeMs, collected}`
+  with the id's own type, and its answer read as `{wiltingMs}` (0 when unset);
 - no cache: every call reaches `request`, because the list is read once per
   fetch loop and a cached answer would hide marks made on the phone;
-- PipiError from `request` (login, rate limit) propagates unchanged, so the
-  API maps it to the same HTTP codes as items.
+- PipiError from `request` (login, rate limit) propagates unchanged from both
+  methods, so the API maps it to the same HTTP codes as items.
 """
 import asyncio
 import sys
@@ -119,3 +122,50 @@ for err in (pm.PipiError("pipi_login_required", 401),
     else:
         raise AssertionError(f"{err.code} must propagate")
 print("ok  errors: pipi_login_required and pipi_rate_limited propagate as the same PipiError")
+
+# ── set ──────────────────────────────────────────────────────────────
+c.request = fake_request
+REAL_ID = "9c19ee876ae44a5f9a92b68d602cc1ea.16"
+calls.clear()
+reply = {"ok": True, "mark": {"mapObjectId": REAL_ID, "bloomedTimeMs": BLOOM, "wiltingTimeMs": WILT}}
+assert asyncio.run(c.set_essence_mark(REAL_ID, BLOOM, True)) == {"wiltingMs": WILT}
+# The id keeps its type: the site's own page sends the raw items value, and
+# a number turned into a string (or back) might not match its record.
+asyncio.run(c.set_essence_mark(123456, BLOOM, False))
+assert calls == [
+    ("Handlers/FlowerEssenceData.ashx", {"action": "set", "mapObjectId": REAL_ID, "bloomedTimeMs": BLOOM, "collected": True}),
+    ("Handlers/FlowerEssenceData.ashx", {"action": "set", "mapObjectId": 123456, "bloomedTimeMs": BLOOM, "collected": False}),
+], calls
+assert type(calls[1][1]["mapObjectId"]) is int, calls
+print("ok  set: {action: set, mapObjectId, bloomedTimeMs, collected} with the id's own type; returns mark.wiltingTimeMs")
+
+# No usable wilting time in the answer -> 0, which the layer replaces with
+# the flower's own wiltingMs, like the site does.
+for bad in ({"ok": True}, {"ok": True, "mark": None}, {"ok": True, "mark": "x"},
+            {"ok": True, "mark": {}}, {"ok": True, "mark": {"wiltingTimeMs": None}},
+            {"ok": True, "mark": {"wiltingTimeMs": str(WILT)}}, {"ok": True, "mark": {"wiltingTimeMs": True}}):
+    reply = bad
+    assert asyncio.run(c.set_essence_mark(REAL_ID, BLOOM, True)) == {"wiltingMs": 0}, bad
+reply = {"ok": True, "mark": {"wiltingTimeMs": WILT + 0.7}}
+got = asyncio.run(c.set_essence_mark(REAL_ID, BLOOM, True))
+assert got == {"wiltingMs": WILT} and type(got["wiltingMs"]) is int, got
+print("ok  set: no mark / no valid wiltingTimeMs -> 0; a fractional one is floored")
+
+calls.clear()
+asyncio.run(c.set_essence_mark(REAL_ID, BLOOM, True))
+asyncio.run(c.set_essence_mark(REAL_ID, BLOOM, True))
+assert len(calls) == 2, ("each set must reach the site; no cache", calls)
+print("ok  set: no cache: two calls -> request called twice")
+
+for err in (pm.PipiError("pipi_login_required", 401),
+            pm.PipiError("pipi_rate_limited", 429, retry_after=42.0)):
+    async def failing(endpoint, payload, err=err):
+        raise err
+    c.request = failing
+    try:
+        asyncio.run(c.set_essence_mark(REAL_ID, BLOOM, True))
+    except pm.PipiError as e:
+        assert e is err, (e, err)
+    else:
+        raise AssertionError(f"set: {err.code} must propagate")
+print("ok  set: errors: pipi_login_required and pipi_rate_limited propagate as the same PipiError")

@@ -1527,11 +1527,23 @@ textarea:focus {
   background: transparent;
 }
 
-.pipi-popup-fruit-row {
+/* 撈水果 and 我拿過精華了: one alone fills the row. */
+.pipi-popup-flower-row {
   margin-top: 4px;
 }
-.pipi-popup-fruit-row .btn {
+.pipi-popup-flower-row .btn {
   flex: 1;
+}
+/* Both: two equal columns. Leaflet sizes a popup by its min-content width (up
+   to the marker's maxWidth), where 1fr columns don't even out; max-content
+   makes the row two copies of the wider .btn (which never wraps), and
+   min-width keeps it filling a popup that is wider anyway. The flower
+   markers' maxWidth leaves room for it. */
+.pipi-popup-flower-row-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: max-content;
+  min-width: 100%;
 }
 
 /* ---------- Error Toast ---------- */

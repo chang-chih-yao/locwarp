@@ -523,3 +523,6 @@ export const pipiItems = (
   return pipiRequest<PipiItemsResponse>('GET', `/api/pipi/items?${q.toString()}`, undefined, signal)
 }
 export const pipiEssenceMarks = () => pipiRequest<{ marks: PipiEssenceMark[] }>('GET', '/api/pipi/essence')
+// `id` goes out with the type items gave it; `wiltingMs` 0 = the site sent none.
+export const pipiSetEssence = (b: { id: string | number; bloomedMs: number; collected: boolean }) =>
+  pipiRequest<{ wiltingMs: number }>('PUT', '/api/pipi/essence', b)

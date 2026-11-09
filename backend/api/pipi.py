@@ -3,10 +3,10 @@ using the cookie the user pasted from their own logged-in browser."""
 
 import logging
 import time
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool, StrictInt, StringConstraints
 
 from services.pipi_mushroom import PipiError, PipiMushroomClient, parse_cookie_header
 
@@ -18,6 +18,22 @@ class CookieBody(BaseModel):
     cookie: str = Field(max_length=16384)
     # "extension" = pushed by extensions/pipi-cookie-sync (Chrome extension).
     source: Literal["manual", "extension"] = "manual"
+
+
+# The largest integer a browser's JSON number carries exactly.
+_MAX_SAFE_INT = 2**53 - 1
+
+
+class EssenceBody(BaseModel):
+    """One 拿過精華 mark to set or cancel. Strict types, so nothing the
+    frontend didn't mean is coerced and written to the user's site account."""
+
+    # The item's id with its own type, forwarded as is: the site's page sends
+    # the raw items value too.
+    id: (Annotated[str, StringConstraints(strict=True, min_length=1, max_length=128, pattern=r"\S")]
+         | Annotated[StrictInt, Field(ge=-_MAX_SAFE_INT, le=_MAX_SAFE_INT)])
+    bloomedMs: Annotated[StrictInt, Field(gt=0)]
+    collected: StrictBool
 
 
 def _client():
@@ -131,5 +147,15 @@ async def essence():
     them; the site is the only source."""
     try:
         return {"marks": await _client().essence_marks()}
+    except PipiError as e:
+        raise _http_error(e) from e
+
+
+@router.put("/essence")
+async def set_essence(body: EssenceBody):
+    """Mark one bloom as 拿過精華 (`collected` true) or cancel it. Returns
+    `{wiltingMs}`, 0 when the site gave none."""
+    try:
+        return await _client().set_essence_mark(body.id, body.bloomedMs, body.collected)
     except PipiError as e:
         raise _http_error(e) from e

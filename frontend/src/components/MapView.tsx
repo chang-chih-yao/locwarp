@@ -1970,9 +1970,10 @@ const MapView: React.FC<MapViewProps> = ({
     kinds: pipiKinds,
     flowerFilter: pipiFlowerFilter,
     markerSize: pipiMarkerSize,
-    onTeleport,
-    onNavigate,
-    onCollectFruit: onPipiCollectFruit,
+    onTeleport: (it) => onTeleport(it.lat, it.lng),
+    onNavigate: (it) => onNavigate(it.lat, it.lng),
+    onCollectFruit: (it) => onPipiCollectFruit(it.lat, it.lng),
+    showToast: (msg) => onShowToast?.(msg),
     t,
   });
   const pipiConfiguredRef = useRef(pipi.configured);

@@ -480,6 +480,30 @@ class PipiMushroomClient:
             raise PipiError("pipi_unavailable", 502, "essence list: no items list")
         return [m for m in (_normalize_mark(x) for x in rows) if m]
 
+    async def set_essence_mark(self, mark_id: str | int, bloomed_ms: int, collected: bool) -> dict:
+        """Mark one bloom of a flower as 拿過精華, or cancel it (``collected``
+        False). Never cached, and goes through ``request`` like the list.
+
+        Args:
+            mark_id: the item's ``id``, sent with its own type, as the site's
+                page sends the raw items value.
+            bloomed_ms: the item's ``bloomedMs``.
+            collected: True marks, False cancels.
+
+        Returns:
+            ``{wiltingMs: int}`` from the answer's ``mark.wiltingTimeMs``; 0
+            when it has none, and the caller uses the flower's own.
+
+        Raises:
+            PipiError: from ``request``.
+        """
+        j = await self.request(ESSENCE_ENDPOINT, {
+            "action": "set", "mapObjectId": mark_id, "bloomedTimeMs": bloomed_ms, "collected": collected,
+        })
+        mark = j.get("mark")
+        wilting = _positive_ms(mark.get("wiltingTimeMs")) if isinstance(mark, dict) else None
+        return {"wiltingMs": wilting or 0}
+
     @staticmethod
     def _normalize(raw: object) -> dict | None:
         if not isinstance(raw, dict):

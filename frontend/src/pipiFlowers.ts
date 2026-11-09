@@ -1,6 +1,7 @@
 // 蘑菇地圖 flower rules (see GLOSSARY.md: 花種, 花苞, 普花, 彩帶花, 拿過精華):
-// which items are 普花 / 彩帶花, which ones the 花的子篩選 lets through, and how
-// the popup writes the 彩帶期 countdown.
+// which items are 普花 / 彩帶花, which ones the 花的子篩選 lets through, how
+// the popup writes the 彩帶期 countdown, and which flowers offer 撈水果 and
+// 我拿過精華了.
 //
 // No runtime imports and erasable-syntax-only so `node --test` can load it
 // directly; the type-only imports below are stripped whole by Node.
@@ -74,6 +75,30 @@ export function fmtRibbonCountdown(ms: number): string {
  */
 export function canCollectFruit(item: PipiItem, nowMs: number): boolean {
   return ribbonEndMs(item, nowMs) !== null;
+}
+
+/**
+ * Whether the popup offers 我拿過精華了 / its cancel for the item (Q4): a
+ * bloomed flower, not a 花苞, that has not wilted. Unlike 撈水果 it holds for
+ * the whole bloom, past the 彩帶期. Here and not in pipiEssence.ts because it
+ * needs the 花苞 rule, and neither module may import the other at runtime.
+ *
+ * The id and bloom time must be what PUT /api/pipi/essence accepts (a
+ * non-blank string or a safe integer; a positive integer), so the button
+ * doesn't show on a flower whose mark would be refused. The PUT's 128-character
+ * cap on a string id isn't checked here: measured ids are 35.
+ *
+ * @param item a 蘑菇地圖 item of any kind.
+ * @param nowMs server-clock time in ms, as for {@link ribbonEndMs}.
+ */
+export function canMarkEssence(item: PipiItem, nowMs: number): boolean {
+  if (item.itemKind !== 'flower' || isBud(item)) return false;
+  const id: unknown = item.id;
+  if (typeof id === 'string' ? id.trim() === '' : !Number.isSafeInteger(id)) return false;
+  const bloomed = item.bloomedMs;
+  const wilting = item.wiltingMs;
+  if (!Number.isInteger(bloomed) || (bloomed as number) <= 0 || !isSetTime(wilting)) return false;
+  return (bloomed as number) <= nowMs && nowMs < wilting;
 }
 
 /** Whether the item is 普花 (including its 花苞). */

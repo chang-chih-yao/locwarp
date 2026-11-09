@@ -143,3 +143,27 @@ Spec: `.scratch/pipi-flower-essence/spec.md`
   - 要使用者決定、這次沒改：
     - GLOSSARY 沒有「標記清單」「標記狀態」「還沒讀到」「還不知道」這幾個詞，它們只在 spec 裡定義，設計文件、註解和測試名稱都在用。要補的話照慣例另開 `GLOSSARY:` commit。
     - `usePipiMushroomLayer.ts` 的 `onCollectFruit` 註解還寫「不是花苞、還沒枯萎的花才有」，pipi-fruit-approach 02 號票之後已經只對彩帶花。這是之前留下的，跟本票無關。
+- 2026-11-09：另一個 session 對 `27efda7`、`be82454` 做了 code review（基準點 `c71c070`），沒有硬違規、沒有漏做。查證後的處理：
+  - 使用者決定：
+    - 清單收到 cookie 失效或登入錯誤時，維持現在的做法：停下迴圈、保留標記。review 指出這是 spec 沒寫到的情況，不是兩句互相矛盾，上面「兩句互相矛盾」的說法不精確；而且它偏離了 Q10 的字面，當初應該標成要使用者決定。已補進 spec「使用者決定」，標成 Q10 的例外。
+    - review 擔心只有清單端點回登入錯誤時，items 的刷新也會跟著停。查過不會發生：items 也要登入才拿得到。唯一的例外是 items 剛好用了後端快取，那時 cookie 確實已經失效，停下來是對的。
+    - 03 號票補的那條驗收條件留著。
+    - GLOSSARY 補上標記清單、標記狀態、還沒讀到、還不知道，在 `ee2817d`。
+  - 採納，在 `65b6d60`：
+    - 清單回覆缺 `items` 時，後端原本回空清單，現在報 `pipi_unavailable`。原本會靜靜地讓拿過的花全部跑出來，面板也沒有提示，不合 user story 33。鎖住舊行為的測試是本票自己寫的，spec 沒要求，一起改了。
+    - 圖層的 items 和清單各寫一份的錯誤處理抽成 `absorbFailure`。spec 要求兩邊「跟 items 收到一樣」，分開寫以後容易只改一邊。
+    - `readEssenceNow` 改名 `shouldReadEssenceNow`；`passesFlowerFilter` 的參數 `essence` 改名 `essenceTaken`。review 擔心會跟函式 `essenceTaken` 撞名，其實不會，因為 `pipiFlowers.ts` 只 import 型別。
+  - 沒採納：
+    - 「大於 0 的有限數字」在 `pipiEssence.ts` 和 `pipiFlowers.ts` 各寫一份：前端測試的載入方式不允許這兩個模組在執行期互相 import。review 也認為可以接受。
+    - 開新一輪和清單讀到時清掉提示的同一行程式：只有一行，抽出來反而多繞一層。
+  - 驗證：
+    - 前端 122/122，0 skipped；`tests/pipi/` 7 支都通過；`npm run build` 通過。
+    - mutation 37 條全紅。新增 3 條：缺 `items` 當成沒標記、`items` 是 null 當成沒標記、缺 `items` 報成登入錯誤。
+    - 瀏覽器重驗錯誤路徑，用使用者自己開著的 LocWarp 後端，頁面的非 GET 請求都在瀏覽器擋掉。地圖在那朵黃色萬壽菊上，zoom 16。結果跟改之前一樣：
+      - 清單 401：拿過的花維持藏著、沒有讀取失敗的提示、狀態列是登入錯誤，之後平移不送請求。
+      - 清單 502：拿過的花出現、有提示，遠距平移只重抓 items、不重讀清單。
+      - 清單 429（8 秒）：拿過的花出現、有提示；退避期間遠距平移不送請求、顯示限流錯誤；退避結束後平移補讀清單，拿過的花又藏起來、提示消失。
+      - items 401：狀態列是登入錯誤，之後平移不送請求。
+      - items 429（8 秒）：退避期間遠距平移不送請求；結束後重抓，錯誤消失。
+      - items 或清單收到 `pipi_no_cookie`：面板變成「尚未設定 Cookie」，marker 清空；下一次狀態輪詢說有 cookie，就開新的一輪，items 和清單各讀一次，拿過的花藏著。
+      - 整段頁面打了清單 11 次、items 13 次，其中 4 次清單和 3 次 items 是攔截器模擬的失敗，沒有送到後端。

@@ -198,3 +198,28 @@ Spec: `.scratch/pipi-flower-essence/spec.md`
       - 三份 `closePopup(); onX(it)`（可能是 Duplicated Code）：spec 要求各個動作自己決定要不要關 popup，寫成三份，每個動作的決定一眼就看得到。按鈕的 markup 沿用既有的寫法。
       - `PUT` 的接受規則前後端各寫一份（可能是 Shotgun Surgery）：spec 要求兩邊一致，前端測試也不能在執行期 import 後端。這是已知的耦合，兩邊的註解都寫了。
     - 改完重跑 typecheck、前端 138/138、`tests/pipi/` 全部、`npm run build`，mutation 42 條全紅。
+- 2026-11-10：第二輪 review（另一個 session 對 `71bc37c`、`6a86d75` 逐項核對程式碼，沒有找到功能錯誤）的處理。
+  - 採納：
+    - **存檔中防重複送出沒有測試鎖住**：在 `71bc37c` 裡，把 `if (savingRef.current.has(key))` 那一行拿掉，不會有測試變紅。設計文件又把它列在「只能收緊」的請求限制裡。
+      - 跟使用者確認了新的切面：標記動作抽到拿過精華模組，改成 `createEssenceSaver(send, apply)`，回傳 `setMark(item, collected)` 和 `isSaving(item)`。送出請求和套用回覆的函式由圖層注入，模組照樣不 import 任何東西。
+      - 圖層只建立一個 saver，放在 `useState` 的初始值裡，不放進 React state 的值。popup 打開時用 `isSaving` 決定按鈕畫不畫成停用。
+      - 補上 6 個測試，spec 切面 B 加上「標記動作」那一段。mutation 15 條全部變紅：不擋存檔中、永遠不清掉、只有成功才清掉、全域鎖、只看 id 不分開花、成功不套用、套用時不用回覆的失效時間、回覆回來之前就套用、失敗也套用、失敗時重試、錯誤文字丟失、collected 寫死、id 轉成字串、沒有識別也送出、`isSaving` 永遠是 false。
+      - 第一版的測試直接 await 第二次呼叫。拿掉防重複之後，那個請求永遠等不到回覆，測試會卡住，不會變紅。所以改成先數送出次數，再 await。
+      - rules 檔的請求限制那一行、圖層開頭的 request budget 都補上這一條。
+    - **兩處文字跟新功能矛盾**：GLOSSARY「標記狀態」補上「標記或取消之後照原站的回覆更新」（獨立的 `GLOSSARY:` commit）；`pipiEssence.ts` 開頭原本寫清單是 "the only source of marks"，改成「標記只來自原站：清單和設定的回覆」。
+    - **名稱**：`markEssence(it, false)` 其實是取消，改叫 `setMark`，跟後端的 `set_essence_mark`、前端 API 的 `pipiSetEssence` 一致。
+    - **按鈕的值只要不是 `mark` 就當成取消**：改成只認 `mark` 和 `unmark`，其他值什麼都不送、記一筆 console.error，跟同一個檔案裡「沒有對應動作的按鈕什麼都不做」一致。這段在圖層裡，沒有自動化測試，靠下面的人工驗證。
+    - **spec 把推論寫成實測**：spec「原站協定」和設計文件都改成「標記的回覆裡 `mark.wiltingTimeMs` 是那朵花的枯萎時間，這是推出來的」。理由是後端只從這個欄位取值、沒有就回 0，而它回了那朵花的枯萎時間。spec「還沒驗證」補上標記的原始回覆，04 號票單機實際撈水果那一次可以順便記下來。這張票只允許一次真的標記，所以這次不重量。
+  - 沒採納：沒有。spec 沒寫、但按鈕會檢查 id 的形狀這一點，review 認為可以接受，維持不變。
+  - 測試：前端 144/144，0 skipped。`tests/pipi/` 6 支 Python 和 `test_extension.js` 的 exit code 都是 0。`npm run build` 通過。03 號票原本的 42 條 mutation 重跑也全紅。
+  - 人工驗證（圖層接線）：
+    - 做法：cookie 已經過期，所以這次攔截器也回假的 items（三朵花）和清單，設定請求一律回假的結果，不放行。
+    - 後端 access log：`PUT /api/pipi/essence` 0 次。items 和清單各 1 次，都是頁面剛載入、還沒換成假資料前，cookie 過期回 401 的那兩次。
+    - 標記（延遲 6 秒的假成功）：
+      - 按下後按鈕馬上停用，送出 1 次，body 是點位原本的 id 和盛開時間。
+      - 延遲期間按「重新整理」：items 重讀，整層重建，popup 重開在新的按鈕上，按鈕還是停用。
+      - 用 JS 把按鈕改回可按、再按一次，還是只送出 1 次。
+      - 成功後 popup 關掉、花消失，跳出「已標記為拿過精華」。
+    - 失敗（假的 502）：跳出「標記拿過精華失敗：Pipi Mushroom 暫時無法連線, 或網站格式已變更」，popup 不關，按鈕恢復可按，花還在。
+    - 取消（勾著「顯示拿過精華的花」，假的清單裡有這朵）：按鈕是「已拿過精華（取消）」，送出 `collected: false`。成功後 popup 不關，按鈕變回「我拿過精華了」，跳出「已取消拿過精華標記」，沒有重讀清單。✓ 這次沒驗，我拿來偵測的方法讀不到它，02、03 號票都驗過。
+    - 把 `data-pipi-essence` 改成 `x` 再按：沒有送出、按鈕沒停用、沒有提示，console 有一筆 `[pipi] 拿過精華 button with unknown data-pipi-essence="x"`。

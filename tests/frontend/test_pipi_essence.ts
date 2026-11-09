@@ -8,7 +8,7 @@
 // seen sending say which upstream format change they guard against.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ESSENCE_NOT_LOADED, essenceMarkId, essenceTaken, marksFromList, marksFromSet } from '../../frontend/src/pipiEssence.ts';
+import { ESSENCE_NOT_LOADED, createEssenceSaver, essenceMarkId, essenceTaken, marksFromList, marksFromSet } from '../../frontend/src/pipiEssence.ts';
 import type { PipiEssenceMark, PipiItem } from '../../frontend/src/services/api.ts';
 
 const HOUR = 3_600_000;
@@ -185,4 +185,100 @@ test('數字 id 的花標記之後，清單裡同值的字串 id 也算同一朵
 test('沒有識別的點位（盛開時間是 0）設定回覆不改變狀態', () => {
   const before = marksFromList([REAL_MARK], ESSENCE_NOT_LOADED);
   assert.equal(marksFromSet(before, { ...REAL_FLOWER, bloomedMs: 0 }, true, REAL_WILT), before);
+});
+
+// ── 標記動作 (createEssenceSaver): 存檔中, 送出, 套用 ─────────────────────
+
+type SetBody = { id: string | number; bloomedMs: number; collected: boolean };
+
+// A send whose answers the test settles by hand, like a slow site.
+function slowSend() {
+  const sent: SetBody[] = [];
+  const answers: { resolve: (r: { wiltingMs: number }) => void; reject: (e: unknown) => void }[] = [];
+  const send = (body: SetBody) => {
+    sent.push(body);
+    return new Promise<{ wiltingMs: number }>((resolve, reject) => { answers.push({ resolve, reject }); });
+  };
+  return { send, sent, answers };
+}
+
+// Disabling the button can't stop this: a rebuild mid-save reopens the popup
+// with a fresh one, and 自動標記 has no button at all.
+test('同一朵花存檔中再呼叫：回存檔中、不送第二次，標記和取消都是', async () => {
+  const s = slowSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const first = saver.setMark(REAL_FLOWER, true);
+  assert.equal(saver.isSaving(REAL_FLOWER), true);
+  const again = [saver.setMark(REAL_FLOWER, true), saver.setMark(REAL_FLOWER, false)];
+  // Counted before awaiting: a second send would never be answered here.
+  assert.equal(s.sent.length, 1);
+  assert.deepEqual(await Promise.all(again), [{ kind: 'saving' }, { kind: 'saving' }]);
+  s.answers[0].resolve({ wiltingMs: REAL_WILT });
+  assert.deepEqual(await first, { kind: 'ok' });
+  assert.equal(saver.isSaving(REAL_FLOWER), false);
+});
+
+test('存檔中只擋同一次開花：別朵花、同一個花點的下一次開花照樣送出', () => {
+  const s = slowSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const nextBloom = flower(REAL_ID, REAL_BLOOM + 24 * HOUR);
+  void saver.setMark(REAL_FLOWER, true);
+  void saver.setMark(OTHER_FLOWER, true);
+  void saver.setMark(nextBloom, true);
+  assert.equal(s.sent.length, 3);
+  assert.equal(saver.isSaving(nextBloom), true);
+});
+
+test('送出點位原本的 id 和盛開時間；回覆回來才套用，用回覆的失效時間', async () => {
+  const s = slowSend();
+  const applied: unknown[] = [];
+  const saver = createEssenceSaver(s.send, (item, collected, wiltingMs) => { applied.push([item, collected, wiltingMs]); });
+  const numericId = { ...OTHER_FLOWER, id: 123456 as unknown as string };
+  const mark = saver.setMark(REAL_FLOWER, true);
+  const cancel = saver.setMark(numericId, false);
+  assert.deepEqual(s.sent, [
+    { id: REAL_ID, bloomedMs: REAL_BLOOM, collected: true },
+    { id: 123456, bloomedMs: OTHER_FLOWER.bloomedMs, collected: false },
+  ]);
+  assert.equal(applied.length, 0);
+  s.answers[0].resolve({ wiltingMs: REAL_WILT - HOUR });
+  s.answers[1].resolve({ wiltingMs: 0 });
+  assert.deepEqual([await mark, await cancel], [{ kind: 'ok' }, { kind: 'ok' }]);
+  assert.deepEqual(applied, [[REAL_FLOWER, true, REAL_WILT - HOUR], [numericId, false, 0]]);
+});
+
+test('送出失敗：回失敗和原因、不套用、不重試；之後同一朵可以再送', async () => {
+  const s = slowSend();
+  const applied: unknown[] = [];
+  const saver = createEssenceSaver(s.send, (...a) => { applied.push(a); });
+  const r = saver.setMark(REAL_FLOWER, true);
+  s.answers[0].reject(new Error('Pipi Mushroom 暫時無法連線, 或網站格式已變更'));
+  assert.deepEqual(await r, { kind: 'failed', error: 'Pipi Mushroom 暫時無法連線, 或網站格式已變更' });
+  assert.equal(s.sent.length, 1);
+  assert.equal(saver.isSaving(REAL_FLOWER), false);
+  // Not an Error (a bare rejection): its text still reaches the toast.
+  const again = saver.setMark(REAL_FLOWER, true);
+  s.answers[1].reject('timeout');
+  assert.deepEqual(await again, { kind: 'failed', error: 'timeout' });
+  assert.equal(s.sent.length, 2);
+  assert.equal(applied.length, 0);
+});
+
+test('成功之後同一朵可以再送（例如標記之後取消）', async () => {
+  const s = slowSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const mark = saver.setMark(REAL_FLOWER, true);
+  s.answers[0].resolve({ wiltingMs: REAL_WILT });
+  await mark;
+  void saver.setMark(REAL_FLOWER, false);
+  assert.equal(s.sent.length, 2);
+});
+
+test('沒有識別的點位（盛開時間是 0）：回失敗、不送出，也不算存檔中', async () => {
+  const s = slowSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const bud = { ...REAL_FLOWER, bloomedMs: 0 };
+  assert.equal((await saver.setMark(bud, true)).kind, 'failed');
+  assert.equal(s.sent.length, 0);
+  assert.equal(saver.isSaving(bud), false);
 });

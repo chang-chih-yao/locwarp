@@ -22,7 +22,7 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 | Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). `shouldReadEssence` / `recordEssenceRead`: whether this fetch loop still has to read the 標記清單. The layer only acts on its decisions |
 | Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`, `canMarkEssence`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 and 我拿過精華了 |
-| 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `marksFromSet`, `essenceTaken`, `ESSENCE_NOT_LOADED`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, updating it from a set answer, and whether a point is 拿過精華 at a server time. The layer passes the answer to `passesFlowerFilter` |
+| 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `marksFromSet`, `essenceTaken`, `ESSENCE_NOT_LOADED`, `createEssenceSaver`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, updating it from a set answer, whether a point is 拿過精華 at a server time, and the set action with its 存檔中 list (the layer injects the PUT and the state update). The layer passes the 拿過精華 answer to `passesFlowerFilter` |
 | 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `App.tsx` `handleCollectFruit` supplies the single-device or group calls |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花, 顯示拿過精華的花, which shows 拿過精華 flowers with a ✓; disabled while 花 is off, ticks kept), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status, and a 精華標記讀取失敗 line while the last 標記清單 read failed |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
@@ -106,9 +106,12 @@ one cancel on a bloomed flower; details in
 
 - `mapObjectId` and `bloomedTimeMs` go out as items gave them, with their
   own types, like the site's page sends them.
-- A mark answers `mark.wiltingTimeMs` with the flower's wilting time. A cancel
-  answers `{ok: true, mark: {mapObjectId, bloomedTimeMs, wiltingTimeMs: 0,
-  collected: false}}`.
+- A cancel answers `{ok: true, mark: {mapObjectId, bloomedTimeMs,
+  wiltingTimeMs: 0, collected: false}}`.
+- A mark answers `mark.wiltingTimeMs` with the flower's wilting time. This is
+  inferred, not seen: the mark's raw answer wasn't logged, but the backend,
+  which reads only that field (0 when unset), returned the flower's wilting
+  time.
 - After a cancel the row is gone from the list; it doesn't stay with
   `collected: false`. So every row in the list is still a mark.
 - The backend returns `{wiltingMs}` from `mark.wiltingTimeMs`, 0 when unset.
@@ -305,21 +308,22 @@ and Essence taken (undo) 311 px; every popup without the pair stayed below
 close the popup: teleport, navigate and 撈水果 close it first; the mark button
 doesn't.
 
-**The mark action** (to be shared with ticket 04's 自動標記; it works with the
-layer off). It sends the PUT, keeps the 存檔中 list, applies the answer
-(`marksFromSet`) and reports `ok`, `failed` (with the error) or `saving`. It
-never closes a popup or shows a toast, so a 自動標記 can't close whatever
-popup the user has open, and two toasts can't replace each other.
+**The mark action** (`createEssenceSaver` in `pipiEssence.ts`, one per layer
+hook; to be shared with ticket 04's 自動標記; it works with the layer off). It
+sends the PUT, keeps the 存檔中 list, applies the answer (`marksFromSet`) and
+reports `ok`, `failed` (with the error) or `saving`. It never closes a popup
+or shows a toast, so a 自動標記 can't close whatever popup the user has open,
+and two toasts can't replace each other.
 
 - The answer is applied locally, as the site's page does; the list isn't
   read again. A 0 `wiltingMs` falls back to the flower's own. Applied to a
   還沒讀到 state it stays 還沒讀到, so one answer can't pass for a read list.
-- **存檔中.** The identities being saved sit in a ref, not React state (state
-  would rebuild the layer on entering and leaving it). A second call for the
-  same flower meanwhile sends nothing and reports `saving`. Disabling the
-  button alone can't stop it: a rebuild mid-save (60 s refresh, a list
-  answer) reopens the popup with a fresh button. Every popup open draws a
-  flower that is still saving with its button disabled.
+- **存檔中.** The identities being saved sit in the saver, not React state
+  (state would rebuild the layer on entering and leaving it). A second call
+  for the same flower meanwhile sends nothing and reports `saving`.
+  Disabling the button alone can't stop it: a rebuild mid-save (60 s
+  refresh, a list answer) reopens the popup with a fresh button. Every popup
+  open draws a flower that is still saving with its button disabled.
 - **Popup close and reopen is accepted.** The 標記狀態 is a dependency of the
   marker effect, so a successful mark rebuilds the layer, which closes the
   open popup and reopens it from the new 標記狀態 (label and ✓), as a 60 s
@@ -398,7 +402,8 @@ mark's expiry by server time (the site uses the local clock).
       counts as read, and the next loop retries.
   - A 拿過精華 set (`PUT /api/pipi/essence`) goes out once per press of the
     popup button, never retried, and a second one for a flower still being
-    saved isn't sent. A mark doesn't read the list again.
+    saved isn't sent (`createEssenceSaver`, locked by `test_pipi_essence.ts`).
+    A mark doesn't read the list again.
 - **Backend:**
   - One upstream call at a time, at least 1 s apart.
   - 30 s cache per viewport. A hit adds the entry's age to `now_ms`, so it still reads as the server time at response.

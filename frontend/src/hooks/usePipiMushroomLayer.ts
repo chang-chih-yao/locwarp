@@ -11,7 +11,7 @@ import {
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
-import { ESSENCE_NOT_LOADED, essenceMarkId, essenceTaken, marksFromList, marksFromSet } from '../pipiEssence';
+import { ESSENCE_NOT_LOADED, createEssenceSaver, essenceTaken, marksFromList, marksFromSet } from '../pipiEssence';
 import type { PipiEssenceMarks } from '../pipiEssence';
 import { canCollectFruit, canMarkEssence, fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 import { PIPI_FRESH_MS, createPipiFetchPlanner } from '../pipiFetchPlanner';
@@ -33,6 +33,8 @@ import { PIPI_MAX_MARKERS, selectPipiMarkers } from '../pipiMarkerSelection';
 //   * the 標記清單 (拿過精華) once per fetch loop, only once the cookie is
 //     known to be set, never below zoom 15; a 429 on it is retried after the
 //     back-off
+//   * a 拿過精華 set once per press, never retried, and none for a flower
+//     still saving (createEssenceSaver)
 // The hide / reuse / fetch call is pipiFetchPlanner.ts'; this hook acts on it.
 // The backend adds its own 1 req/s spacing and a 30 s cache on top.
 
@@ -78,12 +80,6 @@ export interface PipiLayerStatus {
   essenceFailed: boolean;
 }
 export type PipiKinds = Record<PipiKind, boolean>;
-
-/**
- * What the shared 拿過精華 mark action did. `saving`: the same flower was
- * still being saved, so nothing was sent.
- */
-export type PipiEssenceSetResult = { kind: 'ok' } | { kind: 'failed'; error: string } | { kind: 'saving' };
 
 type TFn = (key: any, vars?: Record<string, string | number>) => string;
 
@@ -171,7 +167,7 @@ function flowerActionsHtml(fruit: boolean, essence: { taken: boolean; saving: bo
   return `<div class="map-popup-actions pipi-popup-flower-row${fruitBtn && essenceBtn ? ' pipi-popup-flower-row-pair' : ''}">${fruitBtn}${essenceBtn}</div>`;
 }
 
-function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn, marks: PipiEssenceMarks, saving: ReadonlySet<string>): string {
+function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn, marks: PipiEssenceMarks, isSaving: (it: PipiItem) => boolean): string {
   const img = safeImage(it);
   const end = endMs(it, kind);
   const now = Date.now() + offset;
@@ -183,9 +179,8 @@ function popupHtml(it: PipiItem, kind: PipiKind, offset: number, t: TFn, marks: 
   const fruit = canCollectFruit(it, now);
   // Also at open time, like the time lines. 還不知道 reads as not taken. A
   // flower still saving is drawn disabled, also when a rebuild reopens it.
-  const markId = essenceMarkId(it.id, it.bloomedMs);
   const essence = canMarkEssence(it, now)
-    ? { taken: essenceTaken(it, marks, now) === 'taken', saving: markId !== null && saving.has(markId) }
+    ? { taken: essenceTaken(it, marks, now) === 'taken', saving: isSaving(it) }
     : null;
   let timeLine = '';
   if (end && end > now) {
@@ -251,50 +246,30 @@ export function usePipiMushroomLayer({
   const openPopupElRef = useRef<HTMLElement | null>(null);
   const reopenIdRef = useRef<string | null>(null);
 
-  // Mark identities being saved. A ref, not state: state would rebuild the
-  // whole layer on entering and leaving it. Disabling the button alone can't
-  // stop a second send: a rebuild mid-save (60 s refresh, list answer)
-  // reopens the popup with a fresh button.
-  const savingRef = useRef<Set<string>>(new Set());
-  /**
-   * The 拿過精華 mark action the popup button and 自動標記 share; it works
-   * with the layer off. It sends, keeps savingRef, applies the answer to the
-   * 標記狀態 and reports. Closing popups and toasts are left to the caller:
-   * closing here would shut whatever popup the user has open when 自動標記
-   * lands, and two toasts would replace each other.
-   *
-   * @param item the flower, as the caller got it; callers check
-   *   canMarkEssence first.
-   * @param collected true marks, false cancels.
-   * @returns `ok`; `failed` with the error text (the 標記狀態 is left as it
-   *   was); or `saving` when the same flower is still being saved, and then
-   *   nothing is sent.
-   */
-  const markEssence = useCallback(async (item: PipiItem, collected: boolean): Promise<PipiEssenceSetResult> => {
-    const key = essenceMarkId(item.id, item.bloomedMs);
-    // Unreachable past canMarkEssence, which implies an identity.
-    if (key === null) return { kind: 'failed', error: `no mark identity for ${String(item.id)}` };
-    if (savingRef.current.has(key)) return { kind: 'saving' };
-    savingRef.current.add(key);
-    try {
-      const r = await pipiSetEssence({ id: item.id, bloomedMs: item.bloomedMs as number, collected });
-      // Applied locally like the site does; the list isn't read again.
-      setEssenceMarks((prev) => marksFromSet(prev, item, collected, r.wiltingMs));
-      return { kind: 'ok' };
-    } catch (e) {
-      return { kind: 'failed', error: (e as Error).message || String(e) };
-    } finally {
-      savingRef.current.delete(key);
-    }
-  }, []);
+  // The 拿過精華 set action the popup button and 自動標記 share, one for the
+  // hook's lifetime, so it works with the layer off. Its 存檔中 list stays out
+  // of React state, which would rebuild the whole layer on entering and
+  // leaving it. The answer is applied locally like the site does; the list
+  // isn't read again.
+  const [essenceSaver] = useState(() => createEssenceSaver(
+    pipiSetEssence,
+    (item, collected, wiltingMs) => setEssenceMarks((prev) => marksFromSet(prev, item, collected, wiltingMs)),
+  ));
 
   // The popup's 我拿過精華了 / 已拿過精華（取消）. It leaves the popup open
   // while saving; a success rebuilds the layer, which reopens it (ticked) from
   // the new 標記狀態.
   const markFromPopup = useCallback(async (it: PipiItem, btn: HTMLButtonElement) => {
-    const collected = btn.dataset.pipiEssence === 'mark';
+    const which = btn.dataset.pipiEssence;
+    // Anything but the two values flowerActionsHtml writes sends nothing,
+    // rather than a cancel on the user's site account.
+    if (which !== 'mark' && which !== 'unmark') {
+      console.error(`[pipi] 拿過精華 button with unknown data-pipi-essence="${which}"`);
+      return;
+    }
+    const collected = which === 'mark';
     btn.disabled = true;
-    const r = await markEssence(it, collected);
+    const r = await essenceSaver.setMark(it, collected);
     // Only reachable past the disabled button, so no toast for it.
     if (r.kind === 'saving') return;
     const showsHere = openIdRef.current === it.id;
@@ -308,7 +283,7 @@ export function usePipiMushroomLayer({
     // The popup may have been reopened on a new marker during the save.
     const openBtn = showsHere ? openPopupElRef.current?.querySelector<HTMLButtonElement>('[data-pipi-act="essence"]') : null;
     if (openBtn) openBtn.disabled = false;
-  }, [markEssence, mapRef]);
+  }, [essenceSaver, mapRef]);
 
   // Popup buttons by data-pipi-act; each decides whether to close the popup.
   // Every act needs its own entry: an unmapped one does nothing (and logs)
@@ -625,7 +600,7 @@ export function usePipiMushroomLayer({
       const marker = L.marker([it.lat, it.lng + lngShift], { icon, keyboard: false, riseOnHover: true });
       marker.bindTooltip(escapeHtml(itemName(it)), { direction: 'top' });
       // essenceMarks is this build's, which is current: a change rebuilds.
-      marker.bindPopup(() => popupHtml(it, kind, offset, tRef.current, essenceMarks, savingRef.current), {
+      marker.bindPopup(() => popupHtml(it, kind, offset, tRef.current, essenceMarks, essenceSaver.isSaving), {
         maxWidth: kind === 'flower' ? FLOWER_POPUP_MAX_WIDTH : POPUP_MAX_WIDTH, minWidth: 200,
       });
       marker.on('popupopen', (e: L.PopupEvent) => {
@@ -706,7 +681,7 @@ export function usePipiMushroomLayer({
     };
   }, [
     data, markersHidden, enabled, kinds.mushroom, kinds.flower, kinds.smoke,
-    flowerFilter.ribbonOnly, flowerFilter.showCommon, flowerFilter.showEssenceTaken, markerSize, mapRef,
+    flowerFilter.ribbonOnly, flowerFilter.showCommon, flowerFilter.showEssenceTaken, markerSize, mapRef, essenceSaver,
     // Here and never in the fetch effect: there it would restart the loop and
     // refetch items on every list answer.
     essenceMarks,

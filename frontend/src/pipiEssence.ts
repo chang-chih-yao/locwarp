@@ -1,8 +1,9 @@
 // 蘑菇地圖 拿過精華 rules (GLOSSARY.md): the identity of a mark, the
-// 標記狀態 and updating it from a list or a set answer, and whether a flower
-// counts as 拿過精華. The site's list
-// (`FlowerEssenceData.ashx`, read through GET /api/pipi/essence) is the only
-// source of marks; a site format change is fixed here.
+// 標記狀態 and updating it from a list or a set answer, whether a flower
+// counts as 拿過精華, and the set action with its 存檔中 list. Marks come only
+// from the site (`FlowerEssenceData.ashx`): its list, read through
+// GET /api/pipi/essence, and its answers to a set; LocWarp keeps none of its
+// own. A site format change is fixed here.
 //
 // No runtime imports and erasable-syntax-only so `node --test` can load it
 // directly; type-only imports are stripped whole by Node.
@@ -83,6 +84,70 @@ export function marksFromSet(
   if (collected) next.set(key, wiltingMs > 0 ? wiltingMs : (item.wiltingMs ?? 0));
   else next.delete(key);
   return next;
+}
+
+/**
+ * What the 拿過精華 set action did. `saving`: the same flower was still being
+ * saved, so nothing was sent.
+ */
+export type PipiEssenceSetResult = { kind: 'ok' } | { kind: 'failed'; error: string } | { kind: 'saving' };
+
+/** The 拿過精華 set action with its 存檔中 list; see {@link createEssenceSaver}. */
+export interface PipiEssenceSaver {
+  /**
+   * Marks (`collected` true) or cancels the flower's 拿過精華 on the site.
+   *
+   * @param item the flower, as the caller got it; callers check
+   *   canMarkEssence first. `id` and `bloomedMs` go out as they are.
+   * @param collected true marks, false cancels.
+   * @returns `ok` once the answer is applied; `failed` with the error text
+   *   (nothing applied, no retry); or `saving` when the same mark is still
+   *   being saved, and then nothing is sent.
+   */
+  setMark(item: Pick<PipiItem, 'id' | 'bloomedMs' | 'wiltingMs'>, collected: boolean): Promise<PipiEssenceSetResult>;
+  /** Whether the flower's mark is being saved, for drawing its button disabled. */
+  isSaving(item: Pick<PipiItem, 'id' | 'bloomedMs'>): boolean;
+}
+
+/**
+ * The set action the popup button and 自動標記 share. It keeps a 存檔中 list
+ * of mark identities, so a second call for a flower still being saved sends
+ * nothing: disabling the button alone can't stop it, because a rebuild
+ * mid-save reopens the popup with a fresh button. It never closes popups or
+ * shows toasts; those are the caller's.
+ *
+ * @param send PUT /api/pipi/essence (`pipiSetEssence`); injected because this
+ *   module may not import at runtime.
+ * @param apply called once per successful answer with its `wiltingMs`, to
+ *   update the 標記狀態 (`marksFromSet`).
+ */
+export function createEssenceSaver(
+  send: (body: { id: string | number; bloomedMs: number; collected: boolean }) => Promise<{ wiltingMs: number }>,
+  apply: (item: Pick<PipiItem, 'id' | 'bloomedMs' | 'wiltingMs'>, collected: boolean, wiltingMs: number) => void,
+): PipiEssenceSaver {
+  const saving = new Set<string>();
+  return {
+    async setMark(item, collected) {
+      const key = essenceMarkId(item.id, item.bloomedMs);
+      // Unreachable past canMarkEssence, which implies an identity.
+      if (key === null) return { kind: 'failed', error: `no mark identity for ${String(item.id)}` };
+      if (saving.has(key)) return { kind: 'saving' };
+      saving.add(key);
+      try {
+        const r = await send({ id: item.id, bloomedMs: item.bloomedMs as number, collected });
+        apply(item, collected, r.wiltingMs);
+        return { kind: 'ok' };
+      } catch (e) {
+        return { kind: 'failed', error: (e as Error).message || String(e) };
+      } finally {
+        saving.delete(key);
+      }
+    },
+    isSaving(item) {
+      const key = essenceMarkId(item.id, item.bloomedMs);
+      return key !== null && saving.has(key);
+    },
+  };
 }
 
 /**

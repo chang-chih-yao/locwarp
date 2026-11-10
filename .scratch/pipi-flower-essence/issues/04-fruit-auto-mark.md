@@ -164,3 +164,14 @@ Spec: `.scratch/pipi-flower-essence/spec.md`
   - 驗完：
     - 兩台都還停在模擬位置：A 在種蓮花電箱，B 停在走向紅鬼孩的半路上，而且沒有連回來。由使用者自己處理。
     - 5174 的 Vite 和分頁已經關掉。
+- 2026-11-10：使用者要求補上 code review 沒採納的那一項：把 App 管監看的那段抽成撈水果模組的 `createFruitArrivalTracker`，用 TDD 加測試。
+  - 做法：
+    - `createFruitArrivalTracker(onArrived, nowMs)` 回傳 `sendWatched`、`feed`、`socketDropped`。規則照搬原本 App 那段，行為沒變。
+    - App 用 `useState` 建一次，`onArrived` 接到地圖介面的 `autoMarkFlower`，時鐘是 `Date.now`。
+  - 測試：切面 D 新增「監看的管理」8 個，前端 179/179，0 skipped；tsc、`npm run build` 通過。
+  - mutation 13 條，12 條變紅：
+    - 紅的：監看在送出之後才建立、丟例外不丟監看、丟例外吞掉、`allSent` 是 false 不丟、`allSent` 反過來、最終結果不丟、取消也回報、回報第一個監看的花、斷線不清、斷線之後不再監看、時間在建立 tracker 時讀、事件用建立監看的時間。
+    - 「回報第一個監看的花」第一輪沒變紅：原本的測試裡，第一朵在第二朵抵達前已經取消、丟掉了。補了第一朵還沒開始走的情境，這時兩個監看同時都在。
+    - 沒變紅的 1 條是等價的：「取消的監看不丟」。取消是最終結果，從介面看不出差別，只是多佔記憶體。
+  - 人工驗證那一則的「群組有一台導航沒送成功就丟掉監看」，現在由 tracker 的測試鎖住；App 有沒有傳對群組的 `failed.length === 0`，還是沒有自動化測試。
+  - 抽出之後沒有再做人工驗證：上面那一則驗的是抽出之前的 App。App 這邊剩下的接線（導航 callback 呼叫 `sendWatched`、訂閱 `feed`、斷線呼叫 `socketDropped`、`onArrived` 接 `autoMarkFlower`）只有 tsc 檢查。

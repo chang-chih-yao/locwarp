@@ -97,21 +97,24 @@ the user had just made on the site; details in
 - An answer with no `items` list is `pipi_unavailable`, a failed read, not
   an empty list. Unlike an empty map from `items`, no marks would quietly
   show every 拿過精華 flower without the 精華標記讀取失敗 line. An account
-  with no marks at all hasn't been measured yet (ticket 03's account still
-  held another mark); one list read once it is empty settles it.
+  with no marks at all gets `items: []`, measured only indirectly (ticket
+  04, 2026-11-10): an expired mark drops out of the list, and a read that
+  could only have been empty came back fine. The assumption is that no
+  other mark was cancelled or expired in between; a raw answer for an
+  empty account would settle it.
 
-Setting a mark (measured 2026-11-10 through the local backend, one mark and
-one cancel on a bloomed flower; details in
-`.scratch/pipi-flower-essence/issues/03-manual-mark.md`):
+Setting a mark (measured 2026-11-10 through the local backend: one mark and
+one cancel on a bloomed flower in ticket 03, one 自動標記 in ticket 04;
+details in `.scratch/pipi-flower-essence/issues/03-manual-mark.md` and
+`04-fruit-auto-mark.md` there):
 
 - `mapObjectId` and `bloomedTimeMs` go out as items gave them, with their
   own types, like the site's page sends them.
 - A cancel answers `{ok: true, mark: {mapObjectId, bloomedTimeMs,
   wiltingTimeMs: 0, collected: false}}`.
-- A mark answers `mark.wiltingTimeMs` with the flower's wilting time. This is
-  inferred, not seen: the mark's raw answer wasn't logged, but the backend,
-  which reads only that field (0 when unset), returned the flower's wilting
-  time.
+- A mark answers `{ok: true, mark: {mapObjectId, bloomedTimeMs,
+  wiltingTimeMs, collected: true}}`, with `wiltingTimeMs` the flower's
+  wilting time (raw answer logged in ticket 04).
 - After a cancel the row is gone from the list; it doesn't stay with
   `collected: false`. So every row in the list is still a mark.
 - The backend returns `{wiltingMs}` from `mark.wiltingTimeMs`, 0 when unset.

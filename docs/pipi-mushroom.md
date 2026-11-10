@@ -330,9 +330,9 @@ happen on the way.
     App's hookup is not (no DOM test setup): calling `sendWatched` from the
     navigate callbacks with the group's `failed.length === 0`, subscribing
     `feed`, calling `socketDropped` when `ws.connected` turns false, and
-    `onArrived` → `autoMarkFlower`. Ticket 04's manual checks, WebSocket
-    drop included, ran on the same rules before they moved out of App; the
-    move itself hasn't been checked by hand.
+    `onArrived` → `autoMarkFlower`. Ticket 04's real-device checks ran
+    before the move; after it, a fully faked browser run (no backend,
+    devices or site) checked all four, group navigate failure included.
 
 It is a one-off action, separate from the 花農專用模式 (`SimMode.Flower`),
 and uses none of its radius, lap or wait settings.

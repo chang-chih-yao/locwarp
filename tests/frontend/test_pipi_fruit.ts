@@ -8,7 +8,7 @@
 // decisions in .scratch/pipi-fruit-approach/issues/01-popup-fruit-button.md.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { feedFruitArrival, fruitStartPoint, runFruitApproach, watchFruitArrival } from '../../frontend/src/pipiFruit.ts';
+import { createFruitArrivalTracker, feedFruitArrival, fruitStartPoint, runFruitApproach, watchFruitArrival } from '../../frontend/src/pipiFruit.ts';
 import type { FruitTeleportOutcome } from '../../frontend/src/pipiFruit.ts';
 
 const R = 6_371_000;
@@ -339,4 +339,112 @@ test('終點沒有座標或座標不是數字，不是這朵花', () => {
   const strDest: WsMsg = { type: 'navigation_complete', data: { destination: { lat: String(FLOWER.lat), lng: String(FLOWER.lng) }, udid: 'A' } };
   assert.deepEqual(verdicts(['A'], [[noDest, 100], [completeEv('A'), 9_000]]), ['waiting', 'waiting']);
   assert.deepEqual(verdicts(['A'], [[startEv('A'), 100], [strDest, 9_000]]), ['waiting', 'cancelled']);
+});
+
+// ── 監看的管理 (自動標記的接線) ────────────────────────────────────────
+// Locks how App's 撈水果 keeps its watches: made right before the walk is
+// sent, dropped when the walk isn't sent, fed every WebSocket event,
+// dropped on a final verdict or a WebSocket drop, and an arrival handed to
+// 自動標記 with the flower it was made for. Flowers are plain strings here.
+
+/** A tracker on a clock the test moves, and the flowers it reported. */
+function tracker() {
+  const clock = { now: T0 };
+  const arrived: string[] = [];
+  const t = createFruitArrivalTracker<string>((flower) => arrived.push(flower), () => clock.now);
+  return { t, arrived, clock };
+}
+
+const sent = async () => 'sent';
+const always = () => true;
+
+test('送出撈水果的走路，走到花上之後回報那朵花', async () => {
+  const { t, arrived } = tracker();
+  assert.equal(await t.sendWatched('X', ['A'], FLOWER, sent, always), 'sent', '回傳送出的結果');
+  t.feed(startEv('A'));
+  t.feed(completeEv('A'));
+  assert.deepEqual(arrived, ['X']);
+});
+
+test('抵達之後丟掉監看：後面的事件（緊接著的 idle、下一次走到同一朵花）不再回報', async () => {
+  const { t, arrived } = tracker();
+  await t.sendWatched('X', ['A'], FLOWER, sent, always);
+  for (const ev of [startEv('A'), completeEv('A'), stateEv('A', 'idle'), startEv('A'), completeEv('A')]) t.feed(ev);
+  assert.deepEqual(arrived, ['X']);
+});
+
+// Kept, the watch would wait out its 15 s, and a 導航到這裡 onto the same
+// flower within them would be marked.
+test('單機導航丟例外：例外照樣丟出，監看丟掉，之後同一台走到花上也不回報', async () => {
+  const { t, arrived } = tracker();
+  const boom = new Error('navigate failed');
+  await assert.rejects(t.sendWatched('X', ['A'], FLOWER, async () => { throw boom; }, always), boom);
+  t.feed(startEv('A'));
+  t.feed(completeEv('A'));
+  assert.deepEqual(arrived, []);
+});
+
+test('群組有一台導航沒送成功（allSent 回 false）：照樣回傳送出的結果，監看丟掉；之後兩台都走到這朵花（失敗的那台改用導航到這裡）也不回報', async () => {
+  const { t, arrived } = tracker();
+  const outcome = { ok: [{ udid: 'A' }], failed: [{ udid: 'B', reason: 'x' }] };
+  const result = await t.sendWatched('X', ['A', 'B'], FLOWER, async () => outcome, (o) => o.failed.length === 0);
+  assert.equal(result, outcome);
+  for (const ev of [startEv('A'), completeEv('A'), startEv('B'), completeEv('B')]) t.feed(ev);
+  assert.deepEqual(arrived, []);
+});
+
+test('監看在送出之前就建立：導航的回覆還沒回來，開始和完成事件就先到了，照樣回報', async () => {
+  const { t, arrived } = tracker();
+  let reply!: (v: string) => void;
+  const pending = t.sendWatched('X', ['A'], FLOWER, () => new Promise<string>((r) => { reply = r; }), always);
+  t.feed(startEv('A'));
+  t.feed(completeEv('A'));
+  reply('sent');
+  assert.equal(await pending, 'sent');
+  assert.deepEqual(arrived, ['X']);
+});
+
+// The teleport before the walk takes a while, and must not use up the 15 s.
+test('15 秒期限從送出走路那一刻算，每筆事件用它進來時的時間：送出後 15 秒內開始就回報，超過就不回報', async () => {
+  for (const [startAfter, expected] of [[15_000, ['X']], [15_001, []]] as const) {
+    const { t, arrived, clock } = tracker();
+    clock.now += 60_000;
+    await t.sendWatched('X', ['A'], FLOWER, sent, always);
+    clock.now += startAfter;
+    t.feed(startEv('A'));
+    clock.now += 9_000;
+    t.feed(completeEv('A'));
+    assert.deepEqual(arrived, expected, `送出後 ${startAfter} ms 開始`);
+  }
+});
+
+// A navigation_complete missed while the socket was down would leave the
+// watch walking for good, and a later 導航到這裡 onto the same flower from an
+// idle device (which sends no idle) would pass for its arrival.
+test('WS 斷線就丟掉所有監看，重連後的事件不回報；之後新送出的撈水果照樣監看', async () => {
+  const { t, arrived } = tracker();
+  await t.sendWatched('X', ['A'], FLOWER, sent, always);
+  await t.sendWatched('Y', ['B'], FLOWER, sent, always);
+  t.feed(startEv('A'));
+  t.socketDropped();
+  for (const ev of [startEv('A'), completeEv('A'), startEv('B'), completeEv('B')]) t.feed(ev);
+  assert.deepEqual(arrived, [], '斷線前的監看');
+  await t.sendWatched('Z', ['A'], FLOWER, sent, always);
+  t.feed(startEv('A'));
+  t.feed(completeEv('A'));
+  assert.deepEqual(arrived, ['Z']);
+});
+
+test('第一朵的撈水果還沒走到就按了第二朵：只回報第二朵，不管第一朵開始走了（被瞬移取消）還是還沒開始（監看還在）', async () => {
+  const OTHER = { lat: FLOWER.lat + 0.001, lng: FLOWER.lng };
+  for (const firstStarted of [true, false]) {
+    const { t, arrived } = tracker();
+    await t.sendWatched('X', ['A'], FLOWER, sent, always);
+    if (firstStarted) t.feed(startEv('A'));
+    t.feed(stateEv('A', 'teleporting'));
+    await t.sendWatched('Y', ['A'], OTHER, sent, always);
+    t.feed(startEv('A', OTHER));
+    t.feed(completeEv('A', OTHER));
+    assert.deepEqual(arrived, ['Y'], firstStarted ? '第一朵開始走了' : '第一朵還沒開始');
+  }
 });

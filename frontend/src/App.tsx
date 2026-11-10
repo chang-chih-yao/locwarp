@@ -23,8 +23,8 @@ import PauseControl from './components/PauseControl'
 import StatusBar from './components/StatusBar'
 import { DeviceChipRow } from './components/DeviceChipRow'
 import type { FanoutOutcome } from './hooks/useSimulation'
-import { feedFruitArrival, runFruitApproach, watchFruitArrival } from './pipiFruit'
-import type { FruitArrivalWatch, FruitTeleportOutcome } from './pipiFruit'
+import { createFruitArrivalTracker, runFruitApproach } from './pipiFruit'
+import type { FruitTeleportOutcome } from './pipiFruit'
 
 // Summarise a group fan-out result into a single toast string.
 // Call from action handlers: showToast(toastForFanout(t, 'teleport', outcome, connectedDevices))
@@ -633,24 +633,15 @@ const App: React.FC = () => {
   }, [sim, device, t, showToast, pushRecent])
 
   // 自動標記 (.scratch/pipi-flower-essence/spec.md「自動標記」): one arrival
-  // watch per 撈水果 walk under way, with the flower as it was pressed. Only in
-  // memory, so reloading the page drops them (Q26).
-  const fruitWatchesRef = useRef(new Set<{ watch: FruitArrivalWatch; item: api.PipiItem }>())
-  useEffect(() => ws.subscribe((msg) => {
-    for (const entry of fruitWatchesRef.current) {
-      entry.watch = feedFruitArrival(entry.watch, msg, Date.now())
-      if (entry.watch.verdict === 'waiting') continue
-      fruitWatchesRef.current.delete(entry)
-      if (entry.watch.verdict === 'arrived') void mapApiRef.current?.autoMarkFlower(entry.item)
-    }
-  }), [ws.subscribe])
-  // Dropped as soon as the socket goes, not at reconnect: a navigation_complete
-  // missed meanwhile would leave a watch walking for good, and a later
-  // 導航到這裡 onto the same flower from an idle device (no idle sent) would
-  // pass for its arrival.
+  // watch per 撈水果 walk under way, with the flower as it was pressed.
+  const [fruitArrivals] = useState(() => createFruitArrivalTracker<api.PipiItem>(
+    (item) => void mapApiRef.current?.autoMarkFlower(item),
+    Date.now,
+  ))
+  useEffect(() => ws.subscribe(fruitArrivals.feed), [ws.subscribe, fruitArrivals])
   useEffect(() => {
-    if (!ws.connected) fruitWatchesRef.current.clear()
-  }, [ws.connected])
+    if (!ws.connected) fruitArrivals.socketDropped()
+  }, [ws.connected, fruitArrivals])
 
   // 撈水果 (GLOSSARY.md) from a 蘑菇地圖 flower's popup: teleport 35 m east,
   // then walk straight onto the flower. Recent places get the flower only,
@@ -660,23 +651,6 @@ const App: React.FC = () => {
     setPreviewPin(null)
     const devices = device.connectedDevices
     const udids = devices.map((d) => d.udid)
-    // Sends the walk with an arrival watch made right before it: the start
-    // event may beat the reply, and the teleport must not use up the watch's
-    // 15 s start deadline. Unless every device's walk was sent, no 自動標記.
-    const sendWatched = async <N,>(
-      walkers: string[], dest: { lat: number; lng: number }, send: () => Promise<N>, allSent: (n: N) => boolean,
-    ): Promise<N> => {
-      const entry = { watch: watchFruitArrival(walkers, dest, Date.now()), item }
-      fruitWatchesRef.current.add(entry)
-      try {
-        const n = await send()
-        if (!allSent(n)) fruitWatchesRef.current.delete(entry)
-        return n
-      } catch (e) {
-        fruitWatchesRef.current.delete(entry)
-        throw e
-      }
-    }
     if (udids.length >= 2) {
       const r = await runFruitApproach(flower, {
         teleport: (lat, lng) => {
@@ -686,7 +660,7 @@ const App: React.FC = () => {
         navigate: async (lat, lng, opts) => {
           // skipPreSync also skips preSyncStart's settle delay, so wait here.
           await new Promise((res) => setTimeout(res, GROUP_SETTLE_MS))
-          return sendWatched(udids, { lat, lng }, () => sim.navigateAll(udids, lat, lng, opts), (o) => o.failed.length === 0)
+          return fruitArrivals.sendWatched(item, udids, { lat, lng }, () => sim.navigateAll(udids, lat, lng, opts), (o) => o.failed.length === 0)
         },
       })
       // One toast only: showToast replaces the previous one.
@@ -709,11 +683,11 @@ const App: React.FC = () => {
             return { ok: [], failed: [{ udid, reason: (e as Error)?.message ?? String(e) }] }
           }
         },
-        navigate: (lat, lng, opts) => sendWatched([udid], { lat, lng }, () => sim.navigate(lat, lng, opts), () => true),
+        navigate: (lat, lng, opts) => fruitArrivals.sendWatched(item, [udid], { lat, lng }, () => sim.navigate(lat, lng, opts), () => true),
       })
       if (!r.aborted) void pushRecent(flower.lat, flower.lng, 'navigate')
     } catch { /* navigate failed */ }
-  }, [sim, device, t, showToast, pushRecent])
+  }, [sim, device, t, showToast, pushRecent, fruitArrivals])
 
   const [addBmDialog, setAddBmDialog] = useState<{
     lat: number; lng: number; name: string; category: string;

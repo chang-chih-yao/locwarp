@@ -23,7 +23,7 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 | Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`, `canMarkEssence`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 and 我拿過精華了 |
 | 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `marksFromSet`, `essenceTaken`, `ESSENCE_NOT_LOADED`, `createEssenceSaver`, `autoMarkEssence`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, updating it from a set answer, whether a point is 拿過精華 at a server time, the set action with its 存檔中 list (the layer injects the PUT and the state update), and whether 自動標記 sends a mark. The layer passes the 拿過精華 answer to `passesFlowerFilter` |
-| 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `watchFruitArrival`, `feedFruitArrival`: the arrival watch behind 自動標記, fed one WebSocket event at a time. `App.tsx` `handleCollectFruit` supplies the single-device or group calls and keeps the watches |
+| 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `watchFruitArrival`, `feedFruitArrival`: the arrival watch behind 自動標記, fed one WebSocket event at a time. `createFruitArrivalTracker`: keeps the watches of walks under way (made before a walk is sent, dropped when it isn't, fed, dropped on a WebSocket drop) and reports each arrival. `App.tsx` `handleCollectFruit` supplies the single-device or group calls |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花, 顯示拿過精華的花, which shows 拿過精華 flowers with a ✓; disabled while 花 is off, ticks kept), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status, and a 精華標記讀取失敗 line while the last 標記清單 read failed |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
 | Extension | `extensions/pipi-cookie-sync/` | pushes the browser's Cookie header to `127.0.0.1:8777` (user guide: its `README.md`) |
@@ -310,26 +310,29 @@ happen on the way.
   checks it before being read. The watch only moves on events, so without
   this order a watch whose walk never started would still accept a start
   much later, and a later 導航到這裡 onto the same flower would be marked.
-- **Wiring** (`App.tsx` `handleCollectFruit`):
+- **Wiring** (`createFruitArrivalTracker` in `pipiFruit.ts`, used by
+  `App.tsx` `handleCollectFruit`):
   - The watch is made inside the navigate callback, right before the walk
     is sent (in group mode after the 150 ms wait). Not after the reply,
     which the start event can beat; not before the teleport, which would
     use up the 15 s. A failed teleport never calls the callback, so no watch.
   - A walk that doesn't start (single device: `sim.navigate` throws), or a
     group where any device's navigate failed, drops the watch.
-  - A final verdict drops it; arrival then calls the map API's
-    `autoMarkFlower`.
+  - A final verdict drops it; arrival then calls the tracker's `onArrived`,
+    which App points at the map API's `autoMarkFlower`.
   - A WebSocket drop clears every watch at once, without waiting for the
     reconnect: a `navigation_complete` missed meanwhile would leave a watch
     walking for good, and a later 導航到這裡 onto the same flower from an
     idle device (which sends no idle) would pass for its arrival.
   - Watches live in memory only: reloading the page or closing LocWarp
     mid-walk doesn't mark afterwards (Q26).
-  - None of this wiring has automated tests (no DOM test setup): making the
-    watch before the walk, dropping it when a walk isn't sent, feeding it,
-    clearing it on a WebSocket drop, and calling `autoMarkFlower`. The
-    ticket's manual checks cover a real walk, stop on the way and group
-    mode; the clearing on a WebSocket drop has no manual check either.
+  - The tracker's rules are tested (`tests/frontend/test_pipi_fruit.ts`).
+    App's hookup is not (no DOM test setup): calling `sendWatched` from the
+    navigate callbacks with the group's `failed.length === 0`, subscribing
+    `feed`, calling `socketDropped` when `ws.connected` turns false, and
+    `onArrived` → `autoMarkFlower`. Ticket 04's manual checks, WebSocket
+    drop included, ran on the same rules before they moved out of App; the
+    move itself hasn't been checked by hand.
 
 It is a one-off action, separate from the 花農專用模式 (`SimMode.Flower`),
 and uses none of its radius, lap or wait settings.

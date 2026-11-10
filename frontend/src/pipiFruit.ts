@@ -1,7 +1,7 @@
 // 撈水果 (see GLOSSARY.md: 種花, 撈水果): teleport next to a 蘑菇地圖 flower,
 // then walk onto it, so the game plants flowers along the way and hands out
 // that flower's fruit. Teleporting straight onto the flower leaves no trail.
-// The arrival watch at the bottom tells when that walk made it.
+// The arrival watches at the bottom tell when that walk made it.
 //
 // No runtime imports and erasable-syntax-only so `node --test` can load it
 // directly; the type-only import below is stripped whole by Node.
@@ -184,4 +184,74 @@ export function feedFruitArrival(watch: FruitArrivalWatch, msg: WsMessage, nowMs
   if (!devices) return watch;
   const verdict = [...devices.values()].every((s) => s === 'arrived') ? 'arrived' : 'waiting';
   return { ...watch, devices, verdict };
+}
+
+/** The arrival watches of 撈水果 walks under way; see {@link createFruitArrivalTracker}. */
+export interface FruitArrivalTracker<T> {
+  /**
+   * Sends one 撈水果 walk with an arrival watch made right before it: the
+   * start event may beat the reply, and the teleport before it must not use
+   * up the 15 s start deadline. A walk that isn't sent drops the watch, since
+   * kept it would wait out the 15 s and a 導航到這裡 onto the same flower
+   * within them would be marked.
+   *
+   * @param flower handed to `onArrived` if every device walks onto `dest`.
+   * @param walkers the devices sent walking.
+   * @param dest the destination as sent to navigate.
+   * @param send sends the walk; a throw drops the watch and is rethrown.
+   * @param allSent whether every device's walk was sent; false drops the watch.
+   * @returns what `send` resolved with.
+   */
+  sendWatched<N>(flower: T, walkers: readonly string[], dest: LatLng, send: () => Promise<N>, allSent: (n: N) => boolean): Promise<N>;
+  /**
+   * Feeds one WebSocket event to every watch ({@link feedFruitArrival}). A
+   * final verdict drops the watch; arrival then calls `onArrived`. Fits
+   * `ws.subscribe`.
+   */
+  feed(msg: WsMessage): void;
+  /**
+   * The WebSocket dropped: drops every watch, without waiting for the
+   * reconnect. A navigation_complete missed meanwhile would leave a watch
+   * walking for good, and a later 導航到這裡 onto the same flower from an idle
+   * device (which sends no idle) would pass for its arrival. Watches made
+   * afterwards work as usual.
+   */
+  socketDropped(): void;
+}
+
+/**
+ * The arrival watches behind 自動標記, kept in memory only (reloading the page
+ * drops them).
+ *
+ * @param onArrived called with the flower once every device of its walk has
+ *   arrived, at most once per walk.
+ * @param nowMs the local clock, read when a watch is made and per event.
+ */
+export function createFruitArrivalTracker<T>(onArrived: (flower: T) => void, nowMs: () => number): FruitArrivalTracker<T> {
+  const watches = new Set<{ watch: FruitArrivalWatch; flower: T }>();
+  return {
+    async sendWatched(flower, walkers, dest, send, allSent) {
+      const entry = { watch: watchFruitArrival(walkers, dest, nowMs()), flower };
+      watches.add(entry);
+      try {
+        const n = await send();
+        if (!allSent(n)) watches.delete(entry);
+        return n;
+      } catch (e) {
+        watches.delete(entry);
+        throw e;
+      }
+    },
+    feed(msg) {
+      for (const entry of watches) {
+        entry.watch = feedFruitArrival(entry.watch, msg, nowMs());
+        if (entry.watch.verdict === 'waiting') continue;
+        watches.delete(entry);
+        if (entry.watch.verdict === 'arrived') onArrived(entry.flower);
+      }
+    },
+    socketDropped() {
+      watches.clear();
+    },
+  };
 }

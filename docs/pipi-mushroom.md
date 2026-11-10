@@ -18,12 +18,12 @@ Tests: `tests/pipi/`, `tests/frontend/test_pipi_flowers.ts`, `tests/frontend/tes
 | Protocol client | `backend/services/pipi_mushroom.py` | API session, AES/HMAC envelope, throttle, cache, Set-Cookie renewal, item normalisation, `essence_marks` (the 標記清單, normalised, never cached), `set_essence_mark` (mark or cancel one, never cached) |
 | API | `backend/api/pipi.py` | `GET /api/pipi/status`, `PUT/DELETE /api/pipi/cookie`, `GET /api/pipi/items`, `GET /api/pipi/essence` (`{marks: [{id, bloomedMs, wiltingMs}]}`), `PUT /api/pipi/essence` (`{id, bloomedMs, collected}` → `{wiltingMs}`, strict body) |
 | Settings | `backend/main.py` (`AppState`) | `pipi_cookie`, `pipi_cookie_source` (`manual`/`extension`), `pipi_cookie_updated_at` in `~/.locwarp/settings.json` |
-| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling, the shared 拿過精華 mark action; `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties on the icon's `.pipi-pin-box` |
+| Layer | `frontend/src/hooks/usePipiMushroomLayer.ts` | fetch on pan/zoom, markers, popups, status polling, the shared 拿過精華 mark action, `autoMarkFlower` (自動標記, handed to `App.tsx` through MapView's `onMapReady` map API); `MARKER_PX` is the source of truth for the 標記大小 px, passed to `styles.css` as inline `--pipi-*` properties on the icon's `.pipi-pin-box` |
 | Fetch planner | `frontend/src/pipiFetchPlanner.ts` | `createPipiFetchPlanner` (`plan` / `record`): whether a settled view hides the markers, reuses the last fetch or fetches again; owns the last-fetch record, `PIPI_MIN_ZOOM` and the 60 s `PIPI_FRESH_MS` (also the forced-refresh period). `shouldReadEssence` / `recordEssenceRead`: whether this fetch loop still has to read the 標記清單. The layer only acts on its decisions |
 | Marker selection | `frontend/src/pipiMarkerSelection.ts` | `selectPipiMarkers`, `PIPI_MAX_MARKERS`: which of the 該顯示的點位 to draw past the 點位上限 (nearest by 畫面框距離, plus the open popup's point), whether that is a 上限截斷, and whether the view itself is short of points (畫面內缺點). The layer supplies the filter and the projection |
 | Flower rules | `frontend/src/pipiFlowers.ts` | `isCommonFlower`, `ribbonEndMs`, `passesFlowerFilter`, `fmtRibbonCountdown`, `canCollectFruit`, `canMarkEssence`: 普花 / 彩帶花 checks, the 花的子篩選, the popup's 彩帶期 countdown (see Flowers below), and which items offer 撈水果 and 我拿過精華了 |
-| 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `marksFromSet`, `essenceTaken`, `ESSENCE_NOT_LOADED`, `createEssenceSaver`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, updating it from a set answer, whether a point is 拿過精華 at a server time, and the set action with its 存檔中 list (the layer injects the PUT and the state update). The layer passes the 拿過精華 answer to `passesFlowerFilter` |
-| 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `App.tsx` `handleCollectFruit` supplies the single-device or group calls |
+| 拿過精華 rules | `frontend/src/pipiEssence.ts` | `essenceMarkId`, `marksFromList`, `marksFromSet`, `essenceTaken`, `ESSENCE_NOT_LOADED`, `createEssenceSaver`, `autoMarkEssence`: a mark's identity, the 標記狀態 (with 還沒讀到 apart from an empty list), replacing it from the list, updating it from a set answer, whether a point is 拿過精華 at a server time, the set action with its 存檔中 list (the layer injects the PUT and the state update), and whether 自動標記 sends a mark. The layer passes the 拿過精華 answer to `passesFlowerFilter` |
+| 撈水果 | `frontend/src/pipiFruit.ts` | `fruitStartPoint`, `runFruitApproach`: the start point and the teleport → navigate flow behind the popup's 瞬移+撈水果 button (see 撈水果 below). `watchFruitArrival`, `feedFruitArrival`: the arrival watch behind 自動標記, fed one WebSocket event at a time. `App.tsx` `handleCollectFruit` supplies the single-device or group calls and keeps the watches |
 | Panel | `frontend/src/components/PipiMushroomPanel.tsx` | on/off, kind chips, flower sub-filters (只顯示彩帶, 顯示普花, 顯示拿過精華的花, which shows 拿過精華 flowers with a ✓; disabled while 花 is off, ticks kept), 標記大小 (小 30 / 中 40 / 大 50 px, initially 中, saved as `locwarp.pipi_marker_size`), cookie paste/clear, status, and a 精華標記讀取失敗 line while the last 標記清單 read failed |
 | Button | `frontend/src/components/MapView.tsx` | mushroom button in the left Leaflet bar: click toggles, right-click opens the panel |
 | Extension | `extensions/pipi-cookie-sync/` | pushes the browser's Cookie header to `127.0.0.1:8777` (user guide: its `README.md`) |
@@ -275,10 +275,63 @@ the button. It sits on the row under the teleport / navigate pair, left of
 - **Recent places** get the flower only (kind `navigate`), and only once a
   device has started walking. The start point is never recorded.
 
+**自動標記** (2026-11-10, Q17, Q22–Q26 in `.scratch/pipi-flower-essence/spec.md`).
+Once the straight walk reaches the flower on every device, LocWarp marks it
+拿過精華 (see 拿過精華 below), so the user needn't open the popup again. It
+marks the flower as it was when the button was pressed, whatever refreshes
+happen on the way.
+
+- **The arrival watch** (`feedFruitArrival`, a pure reducer fed every WS
+  event and the time). Per device:
+  - It waits for a `state_change` to `navigating` whose destination is the
+    flower, and ignores everything before it. So the idle from the teleport,
+    or from stopping a previous walk, isn't read as a stop.
+  - Then only `navigating` and `paused` keep it walking: pausing and
+    resuming still arrives (Q22).
+  - A `navigation_complete` to the flower is arrival. The destination
+    matches within 1e-6°; the backend echoes the coordinate sent.
+  - Cancelled by any other state (an allow-list, so a state added later
+    cancels too; today other modes go through `stop()` and an idle first),
+    a `navigation_complete` elsewhere, or a `device_disconnected` naming the
+    device. That event names devices in `udids` (USB unplugged, device lost:
+    `udids` only; WiFi tunnel stopped, user disconnect: `udid` and `udids`),
+    falling back to `udid`; naming none means all, as `useDevice.ts` reads it.
+  - Once arrived, the idle that follows doesn't matter.
+- **Not marked:** stop pressed on the way, a walk sent elsewhere, a device
+  disconnected, a device not started within 15 s, or the WebSocket dropping.
+  The flower stays on the map to try again. Arrival and cancel are final.
+- **Group mode:** every device must arrive; one cancel cancels all (Q23),
+  since each device is another game account. The mark itself is one, on the
+  pipimushroom account (Q26).
+- **The 15 s start deadline** counts from the watch's making, and each event
+  checks it before being read. The watch only moves on events, so without
+  this order a watch whose walk never started would still accept a start
+  much later, and a later 導航到這裡 onto the same flower would be marked.
+- **Wiring** (`App.tsx` `handleCollectFruit`):
+  - The watch is made inside the navigate callback, right before the walk
+    is sent (in group mode after the 150 ms wait). Not after the reply,
+    which the start event can beat; not before the teleport, which would
+    use up the 15 s. A failed teleport never calls the callback, so no watch.
+  - A walk that doesn't start (single device: `sim.navigate` throws), or a
+    group where any device's navigate failed, drops the watch.
+  - A final verdict drops it; arrival then calls the map API's
+    `autoMarkFlower`.
+  - A WebSocket drop clears every watch at once, without waiting for the
+    reconnect: a `navigation_complete` missed meanwhile would leave a watch
+    walking for good, and a later 導航到這裡 onto the same flower from an
+    idle device (which sends no idle) would pass for its arrival.
+  - Watches live in memory only: reloading the page or closing LocWarp
+    mid-walk doesn't mark afterwards (Q26).
+  - None of this wiring has automated tests (no DOM test setup): making the
+    watch before the walk, dropping it when a walk isn't sent, feeding it,
+    clearing it on a WebSocket drop, and calling `autoMarkFlower`. The
+    ticket's manual checks cover a real walk, stop on the way and group
+    mode; the clearing on a WebSocket drop has no manual check either.
+
 It is a one-off action, separate from the 花農專用模式 (`SimMode.Flower`),
 and uses none of its radius, lap or wait settings.
 
-## 拿過精華: marking from the popup (2026-11-10)
+## 拿過精華: the popup button and 自動標記 (2026-11-10)
 
 Terms follow `GLOSSARY.md` (拿過精華, 標記清單, 標記狀態, 還不知道). Decisions
 and their Q numbers: `.scratch/pipi-flower-essence/spec.md`.
@@ -309,7 +362,7 @@ close the popup: teleport, navigate and 撈水果 close it first; the mark butto
 doesn't.
 
 **The mark action** (`createEssenceSaver` in `pipiEssence.ts`, one per layer
-hook; to be shared with ticket 04's 自動標記; it works with the layer off). It
+hook, shared by the popup button and 自動標記; it works with the layer off). It
 sends the PUT, keeps the 存檔中 list, applies the answer (`marksFromSet`) and
 reports `ok`, `failed` (with the error) or `saving`. It never closes a popup
 or shows a toast, so a 自動標記 can't close whatever popup the user has open,
@@ -344,6 +397,39 @@ and two toasts can't replace each other.
 - Accepted edge: ticked, a success while the list is 還沒讀到 leaves the
   state as it was, so nothing rebuilds and the button stays disabled until
   the list arrives (the 1–2 s after the layer opens).
+
+**自動標記** is the other caller (`autoMarkFlower` in the layer, checks in
+`autoMarkEssence`). When it runs is 撈水果's arrival watch (details under
+撈水果 above):
+
+- **When:** the straight walk of 瞬移+撈水果 reached the flower on every
+  device. **Not:** stop pressed, a walk sent elsewhere, a device
+  disconnected or not started within 15 s, or the WebSocket dropping; the
+  flower stays for another try.
+- **Group mode:** only when every device arrived; one that didn't means no
+  mark (Q23). The mark is one, on the pipimushroom account, not per device.
+- **Reloading the page** (or closing LocWarp) mid-walk drops the watch, so
+  that walk is never marked afterwards (Q26).
+
+What it does then:
+
+
+- At server time now (the layer's last offset; with no data, e.g. the layer
+  off, the local clock) it sends a mark only if `canMarkEssence` holds and
+  the flower isn't `taken`; otherwise it skips silently (user stories 27, 28).
+  還不知道 counts as not taken: closing the layer on the way puts the state
+  back to 還沒讀到, and the walk is still marked (Q26). A flower marked
+  outside LocWarp and not read since gets the same mark sent again, which
+  changes nothing.
+- The toast says 已自動標記為拿過精華, or 自動標記拿過精華失敗：{error} with
+  no retry (Q25); a missing cookie is such a failure. `saving` (the user
+  pressed the button on the way and it is still saving) shows nothing.
+- It closes no popup: the one open may be another flower's or a bookmark's.
+- MapView hands App the map API once, when the map is made, so
+  `autoMarkFlower` reads the 標記狀態, offset and toast through refs. One
+  closed over at map creation would keep 還沒讀到 for good and send every
+  time, without an error. No automated test covers this wiring; the manual
+  check is user story 27 (marked by hand on the way, nothing sent on arrival).
 
 **Deliberately unlike the site:** LocWarp hides 拿過精華 flowers unless
 顯示拿過精華的花 is ticked (the site shows them with a ✓), and it judges a
@@ -401,9 +487,11 @@ mark's expiry by server time (the site uses the local clock).
       重新整理 during it would leave the whole loop unread. Any other failure
       counts as read, and the next loop retries.
   - A 拿過精華 set (`PUT /api/pipi/essence`) goes out once per press of the
-    popup button, never retried, and a second one for a flower still being
+    popup button or per 撈水果 that walked all the way onto its flower
+    (自動標記), never retried, and a second one for a flower still being
     saved isn't sent (`createEssenceSaver`, locked by `test_pipi_essence.ts`).
-    A mark doesn't read the list again.
+    自動標記 sends none for a flower already 拿過精華. A mark doesn't read the
+    list again.
 - **Backend:**
   - One upstream call at a time, at least 1 s apart.
   - 30 s cache per viewport. A hit adds the entry's age to `now_ms`, so it still reads as the server time at response.

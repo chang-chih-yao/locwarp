@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { useT } from '../i18n';
 import { reverseGeocode } from '../services/api';
+import type { PipiItem } from '../services/api';
 import L from 'leaflet';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as maplibregl from 'maplibre-gl';
@@ -53,6 +54,16 @@ interface ContextMenuState {
 import type { DeviceRuntime, RuntimesMap } from '../hooks/useSimulation';
 import type { DeviceInfo } from '../hooks/useDevice';
 
+// Imperative escape hatch so non-map components (e.g. the StatusBar's
+// "Locate PC" pan-only flow) can move the map view without going through
+// React state, and App can reach the 蘑菇地圖 layer.
+export interface MapViewApi {
+  panTo: (lat: number, lng: number, zoom?: number) => void;
+  fitBounds: (points: { lat: number; lng: number }[]) => void;
+  /** 自動標記: the 蘑菇地圖 layer's, called once 撈水果 walked onto the flower. */
+  autoMarkFlower: (item: PipiItem) => Promise<void>;
+}
+
 interface MapViewProps {
   currentPosition: Position | null;
   destination: Position | null;
@@ -70,8 +81,9 @@ interface MapViewProps {
   onMapClick: (lat: number, lng: number) => void;
   onTeleport: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
   onNavigate: (lat: number, lng: number, source?: 'menu' | 'coord') => void;
-  // 撈水果 from a 蘑菇地圖 flower's popup (GLOSSARY.md).
-  onPipiCollectFruit: (lat: number, lng: number) => void;
+  // 撈水果 from a 蘑菇地圖 flower's popup (GLOSSARY.md), with the whole
+  // flower: 自動標記 marks the one pressed.
+  onPipiCollectFruit: (item: PipiItem) => void;
   onAddBookmark: (lat: number, lng: number) => void;
   onAddWaypoint?: (lat: number, lng: number) => void;
   // Left-click on a waypoint marker opens a small action menu. Both
@@ -102,13 +114,8 @@ interface MapViewProps {
   // enabled, clicking a marker calls onTeleport at that coordinate.
   bookmarkPins?: Array<{ id?: string; name: string; lat: number; lng: number; country_code?: string }>;
   showBookmarkPins?: boolean;
-  // Imperative escape hatch so non-map components (e.g. the StatusBar's
-  // "Locate PC" pan-only flow) can move the map view without going
-  // through React state.
-  onMapReady?: (api: {
-    panTo: (lat: number, lng: number, zoom?: number) => void;
-    fitBounds: (points: { lat: number; lng: number }[]) => void;
-  }) => void;
+  // Called once, when the map is made.
+  onMapReady?: (api: MapViewApi) => void;
   // Preview-only pin: rendered when the user previews a coord (camera-only
   // fly) so they can see exactly where they're looking on the map. Distinct
   // shape + amber color so it doesn't get confused with the red destination
@@ -960,6 +967,9 @@ const MapView: React.FC<MapViewProps> = ({
             const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]));
             m.fitBounds(bounds, { padding: [60, 60], maxZoom: 17, animate: true });
           },
+          // Through a ref: this runs once, so the layer's function of the
+          // first render would be kept for good.
+          autoMarkFlower: (item: PipiItem) => pipiAutoMarkRef.current(item),
         });
       } catch { /* non-fatal */ }
     }
@@ -1972,10 +1982,12 @@ const MapView: React.FC<MapViewProps> = ({
     markerSize: pipiMarkerSize,
     onTeleport: (it) => onTeleport(it.lat, it.lng),
     onNavigate: (it) => onNavigate(it.lat, it.lng),
-    onCollectFruit: (it) => onPipiCollectFruit(it.lat, it.lng),
+    onCollectFruit: onPipiCollectFruit,
     showToast: (msg) => onShowToast?.(msg),
     t,
   });
+  const pipiAutoMarkRef = useRef(pipi.autoMarkFlower);
+  pipiAutoMarkRef.current = pipi.autoMarkFlower;
   const pipiConfiguredRef = useRef(pipi.configured);
   pipiConfiguredRef.current = pipi.configured;
   const pipiEnabledRef = useRef(pipiEnabled);

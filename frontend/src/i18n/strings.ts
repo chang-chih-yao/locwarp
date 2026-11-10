@@ -410,6 +410,8 @@ export const STRINGS = {
   'map.pipi_essence_unmarked': { zh: '已取消拿過精華標記', en: 'Essence mark removed' },
   'map.pipi_essence_mark_failed': { zh: '標記拿過精華失敗：{error}', en: "Couldn't mark essence taken: {error}" },
   'map.pipi_essence_unmark_failed': { zh: '取消拿過精華標記失敗：{error}', en: "Couldn't remove essence mark: {error}" },
+  'map.pipi_essence_auto_marked': { zh: '已自動標記為拿過精華', en: 'Auto-marked as essence taken' },
+  'map.pipi_essence_auto_mark_failed': { zh: '自動標記拿過精華失敗：{error}', en: "Couldn't auto-mark essence taken: {error}" },
   'map.pipi_refresh': { zh: '重新整理', en: 'Refresh' },
   'map.pipi_cookie_label': { zh: '網站 Cookie', en: 'Site cookie' },
   'map.pipi_cookie_set': { zh: '已設定', en: 'Set' },

@@ -3,12 +3,15 @@
 //
 // Locks the 拿過精華 rules (GLOSSARY.md): the mark's identity, the 標記狀態
 // with its 還沒讀到 value, replacing it from the list, updating it from a set
-// answer, and whether a flower counts as 拿過精華. Data follows the list and items formats measured on
-// 2026-11-09 (01 號票 Comments); tests that need data the site has not been
-// seen sending say which upstream format change they guard against.
+// answer, whether a flower counts as 拿過精華, the set action and 自動標記.
+// Data follows the list and items formats measured on 2026-11-09 (01 號票
+// Comments); tests that need data the site has not been seen sending say
+// which upstream format change they guard against.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ESSENCE_NOT_LOADED, createEssenceSaver, essenceMarkId, essenceTaken, marksFromList, marksFromSet } from '../../frontend/src/pipiEssence.ts';
+import {
+  ESSENCE_NOT_LOADED, autoMarkEssence, createEssenceSaver, essenceMarkId, essenceTaken, marksFromList, marksFromSet,
+} from '../../frontend/src/pipiEssence.ts';
 import type { PipiEssenceMark, PipiItem } from '../../frontend/src/services/api.ts';
 
 const HOUR = 3_600_000;
@@ -281,4 +284,86 @@ test('沒有識別的點位（盛開時間是 0）：回失敗、不送出，也
   assert.equal((await saver.setMark(bud, true)).kind, 'failed');
   assert.equal(s.sent.length, 0);
   assert.equal(saver.isSaving(bud), false);
+});
+
+// ── 自動標記 (autoMarkEssence): 撈水果全部抵達之後 ─────────────────────────
+// What 自動標記 does once every device walked onto the flower
+// (.scratch/pipi-flower-essence/spec.md「自動標記 → 全部抵達時」). The layer
+// passes canMarkEssence's answer, its 標記狀態 and server time, and turns the
+// result into a toast; `skipped` gets none.
+
+const LOADED_EMPTY = marksFromList([], ESSENCE_NOT_LOADED);
+
+test('自動標記：能標記、讀到了而且沒拿過，送出標記（collected 是 true）', async () => {
+  const s = slowSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const r = autoMarkEssence(saver, REAL_FLOWER, { canMark: true, marks: LOADED_EMPTY, nowMs: NOW });
+  assert.deepEqual(s.sent, [{ id: REAL_ID, bloomedMs: REAL_BLOOM, collected: true }]);
+  s.answers[0].resolve({ wiltingMs: REAL_WILT });
+  assert.deepEqual(await r, { kind: 'ok' });
+});
+
+// Answers at once, so a send that shouldn't happen fails the count instead of
+// hanging the test on an answer that never comes.
+function quickSend() {
+  const sent: SetBody[] = [];
+  const send = async (body: SetBody) => { sent.push(body); return { wiltingMs: REAL_WILT }; };
+  return { send, sent };
+}
+
+test('自動標記：花已經不能標（例如走到時剛好枯萎），跳過、不送出（user story 28）', async () => {
+  const s = quickSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  assert.deepEqual(await autoMarkEssence(saver, REAL_FLOWER, { canMark: false, marks: LOADED_EMPTY, nowMs: NOW }), { kind: 'skipped' });
+  assert.deepEqual(await autoMarkEssence(saver, REAL_FLOWER, { canMark: false, marks: ESSENCE_NOT_LOADED, nowMs: NOW }), { kind: 'skipped' });
+  assert.equal(s.sent.length, 0);
+});
+
+test('自動標記：這朵花已經拿過（例如走路途中自己按了），跳過、不再送一次（user story 27）', async () => {
+  const s = quickSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const marks = marksFromList([REAL_MARK], ESSENCE_NOT_LOADED);
+  assert.deepEqual(await autoMarkEssence(saver, REAL_FLOWER, { canMark: true, marks, nowMs: NOW }), { kind: 'skipped' });
+  assert.equal(s.sent.length, 0);
+});
+
+// Q26: closing the layer mid-walk puts the 標記狀態 back to 還沒讀到, and the
+// mark lives on the site, so the walk is still marked.
+test('自動標記：標記狀態還沒讀到（還不知道）當成還沒拿過，照樣送出', async () => {
+  const s = quickSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  assert.deepEqual(await autoMarkEssence(saver, REAL_FLOWER, { canMark: true, marks: ESSENCE_NOT_LOADED, nowMs: NOW }), { kind: 'ok' });
+  assert.deepEqual(s.sent, [{ id: REAL_ID, bloomedMs: REAL_BLOOM, collected: true }]);
+});
+
+test('自動標記：拿過沒拿過照傳入的伺服器時間判斷，標記到期之後就送出', async () => {
+  const s = quickSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  // A list whose mark ends an hour before the flower wilts.
+  const marks = marksFromList([{ ...REAL_MARK, wiltingMs: REAL_WILT - HOUR }], ESSENCE_NOT_LOADED);
+  const check = (nowMs: number) => ({ canMark: true, marks, nowMs });
+  assert.deepEqual(await autoMarkEssence(saver, REAL_FLOWER, check(REAL_WILT - HOUR - 1)), { kind: 'skipped' });
+  assert.deepEqual(await autoMarkEssence(saver, REAL_FLOWER, check(REAL_WILT - HOUR)), { kind: 'ok' });
+  assert.equal(s.sent.length, 1);
+});
+
+test('自動標記：這朵花還在存檔中（走路途中自己按了、還沒回來），回存檔中、不送第二次', async () => {
+  const s = slowSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const manual = saver.setMark(REAL_FLOWER, true);
+  const auto = autoMarkEssence(saver, REAL_FLOWER, { canMark: true, marks: LOADED_EMPTY, nowMs: NOW });
+  // Counted before awaiting, as above.
+  assert.equal(s.sent.length, 1);
+  assert.deepEqual(await auto, { kind: 'saving' });
+  s.answers[0].resolve({ wiltingMs: REAL_WILT });
+  await manual;
+});
+
+test('自動標記：送出失敗（例如沒有 cookie）回失敗和原因，不重試', async () => {
+  const s = slowSend();
+  const saver = createEssenceSaver(s.send, () => {});
+  const r = autoMarkEssence(saver, REAL_FLOWER, { canMark: true, marks: LOADED_EMPTY, nowMs: NOW });
+  s.answers[0].reject(new Error('尚未設定 Pipi Mushroom 的 Cookie'));
+  assert.deepEqual(await r, { kind: 'failed', error: '尚未設定 Pipi Mushroom 的 Cookie' });
+  assert.equal(s.sent.length, 1);
 });

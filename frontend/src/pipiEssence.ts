@@ -1,9 +1,9 @@
 // 蘑菇地圖 拿過精華 rules (GLOSSARY.md): the identity of a mark, the
 // 標記狀態 and updating it from a list or a set answer, whether a flower
-// counts as 拿過精華, and the set action with its 存檔中 list. Marks come only
-// from the site (`FlowerEssenceData.ashx`): its list, read through
-// GET /api/pipi/essence, and its answers to a set; LocWarp keeps none of its
-// own. A site format change is fixed here.
+// counts as 拿過精華, the set action with its 存檔中 list, and 自動標記 after
+// 撈水果. Marks come only from the site (`FlowerEssenceData.ashx`): its list,
+// read through GET /api/pipi/essence, and its answers to a set; LocWarp
+// keeps none of its own. A site format change is fixed here.
 //
 // No runtime imports and erasable-syntax-only so `node --test` can load it
 // directly; type-only imports are stripped whole by Node.
@@ -167,4 +167,31 @@ export function essenceTaken(item: Pick<PipiItem, 'id' | 'bloomedMs'>, marks: Pi
   const key = essenceMarkId(item.id, item.bloomedMs);
   const until = key === null ? undefined : marks.get(key);
   return until !== undefined && until > nowMs ? 'taken' : 'notTaken';
+}
+
+/** What 自動標記 did: the set action's result, or `skipped` when it sent nothing. */
+export type PipiEssenceAutoMarkResult = PipiEssenceSetResult | { kind: 'skipped' };
+
+/**
+ * 自動標記, once 撈水果 walked onto the flower on every device: marks it
+ * 拿過精華 unless it can't be marked any more or already is. 還不知道 counts
+ * as not taken, so a walk is still marked after the layer was closed on the
+ * way (the mark lives on the site). Like the set action it shows nothing.
+ *
+ * @param saver the layer's set action, shared with the popup button, so a
+ *   flower the user is still saving by hand isn't sent twice.
+ * @param item the flower as it was when 撈水果 was pressed.
+ * @param check `canMark`: pipiFlowers.ts' canMarkEssence at `nowMs` (passed
+ *   in because this module may not import it); `marks`: the current
+ *   標記狀態; `nowMs`: server-clock ms now.
+ * @returns `skipped` (nothing sent) when `canMark` is false or the flower is
+ *   `taken`; otherwise the set action's `ok`, `failed` or `saving`.
+ */
+export function autoMarkEssence(
+  saver: PipiEssenceSaver,
+  item: Pick<PipiItem, 'id' | 'bloomedMs' | 'wiltingMs'>,
+  check: { canMark: boolean; marks: PipiEssenceMarks; nowMs: number },
+): Promise<PipiEssenceAutoMarkResult> {
+  if (!check.canMark || essenceTaken(item, check.marks, check.nowMs) === 'taken') return Promise.resolve({ kind: 'skipped' });
+  return saver.setMark(item, true);
 }

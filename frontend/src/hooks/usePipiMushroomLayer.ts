@@ -11,7 +11,7 @@ import {
 } from '../services/api';
 import type { PipiCookieResult, PipiItem, PipiItemsResponse, PipiKind, PipiStatusResponse } from '../services/api';
 import type { PipiFlowerFilter, PipiMarkerSize } from '../defaults';
-import { ESSENCE_NOT_LOADED, createEssenceSaver, essenceTaken, marksFromList, marksFromSet } from '../pipiEssence';
+import { ESSENCE_NOT_LOADED, autoMarkEssence, createEssenceSaver, essenceTaken, marksFromList, marksFromSet } from '../pipiEssence';
 import type { PipiEssenceMarks } from '../pipiEssence';
 import { canCollectFruit, canMarkEssence, fmtRibbonCountdown, passesFlowerFilter, ribbonEndMs } from '../pipiFlowers';
 import { PIPI_FRESH_MS, createPipiFetchPlanner } from '../pipiFetchPlanner';
@@ -33,8 +33,9 @@ import { PIPI_MAX_MARKERS, selectPipiMarkers } from '../pipiMarkerSelection';
 //   * the 標記清單 (拿過精華) once per fetch loop, only once the cookie is
 //     known to be set, never below zoom 15; a 429 on it is retried after the
 //     back-off
-//   * a 拿過精華 set once per press, never retried, and none for a flower
-//     still saving (createEssenceSaver)
+//   * a 拿過精華 set once per press or per 撈水果 walked all the way onto its
+//     flower (自動標記), never retried, and none for a flower still saving
+//     (createEssenceSaver)
 // The hide / reuse / fetch call is pipiFetchPlanner.ts'; this hook acts on it.
 // The backend adds its own 1 req/s spacing and a 30 s cache on top.
 
@@ -284,6 +285,25 @@ export function usePipiMushroomLayer({
     const openBtn = showsHere ? openPopupElRef.current?.querySelector<HTMLButtonElement>('[data-pipi-act="essence"]') : null;
     if (openBtn) openBtn.disabled = false;
   }, [essenceSaver, mapRef]);
+
+  // 自動標記 once 撈水果 walked onto `it` on every device; App calls it
+  // through the map API, which MapView hands over once, when the map is made.
+  // So it reads the 標記狀態, server offset and toast through refs, never
+  // values closed over then: a 還沒讀到 kept from then would send a mark the
+  // user already made on the way (user story 27). Works with the layer off,
+  // which leaves no data (local clock) and 還沒讀到 (still marked, Q26).
+  const essenceMarksRef = useRef(essenceMarks);
+  essenceMarksRef.current = essenceMarks;
+  const offsetRef = useRef(0);
+  offsetRef.current = data?.offset ?? 0;
+  const autoMarkFlower = useCallback(async (it: PipiItem) => {
+    const now = Date.now() + offsetRef.current;
+    const r = await autoMarkEssence(essenceSaver, it, { canMark: canMarkEssence(it, now), marks: essenceMarksRef.current, nowMs: now });
+    // No popup is closed: the one open may be another flower's or a bookmark's.
+    // `skipped` and `saving` show nothing.
+    if (r.kind === 'ok') showToastRef.current(tRef.current('map.pipi_essence_auto_marked'));
+    else if (r.kind === 'failed') showToastRef.current(tRef.current('map.pipi_essence_auto_mark_failed', { error: r.error }));
+  }, [essenceSaver]);
 
   // Popup buttons by data-pipi-act; each decides whether to close the popup.
   // Every act needs its own entry: an unmapped one does nothing (and logs)
@@ -705,5 +725,5 @@ export function usePipiMushroomLayer({
     setCookieInfo({ source: null, updated_at: null });
   }, []);
 
-  return { status, configured, cookieInfo, refresh, saveCookie, clearCookie };
+  return { status, configured, cookieInfo, refresh, saveCookie, clearCookie, autoMarkFlower };
 }
